@@ -13,14 +13,22 @@ echo "🔍 Detecting CUDA include path..."
 CUDA_INCLUDE=$(dirname $(dirname $(which nvcc)))/include
 echo "Detected CUDA include path: $CUDA_INCLUDE"
 
-# === Find Thrust Include Path ===
+# === Find Thrust / CCCL Include Path ===
 echo "🔍 Detecting Thrust include path..."
 CUDA_ROOT=$(dirname $(dirname $(which nvcc)))
+# Default include (pre-CUDA-13 layout)
 THRUST_INCLUDE="$CUDA_ROOT/include"
-# Check if thrust headers exist in CUDA include, otherwise try targets path
-if [ ! -d "$THRUST_INCLUDE/thrust" ]; then
-    THRUST_INCLUDE="$CUDA_ROOT/targets/x86_64-linux/include"
+
+# CUDA 13+ moved CCCL headers under include/cccl/ — prefer that if present
+if [ -d "$CUDA_ROOT/include/cccl" ]; then
+  echo "Detected CUDA 13+ layout: using cccl includes"
+  # Use the cccl parent directory (so includes like <thrust/detail/config.h> resolve)
+  THRUST_INCLUDE="$CUDA_ROOT/include/cccl"
+elif [ -d "$CUDA_ROOT/targets/x86_64-linux/include" ]; then
+  # Some distros install headers under targets path
+  THRUST_INCLUDE="$CUDA_ROOT/targets/x86_64-linux/include"
 fi
+
 echo "Detected Thrust include path: $THRUST_INCLUDE"
 
 LIBCUDA_PATH=$(find /usr -name 'libcuda.so*' 2>/dev/null | head -n 1)
@@ -34,7 +42,7 @@ else
   CUDA_LIB_DIR=""
 fi
 
-OPTIX_INCLUDE="NVIDIA-OptiX-SDK-8.1.0-linux64-x86_64/include"
+OPTIX_INCLUDE="NVIDIA-OptiX-SDK-9.0.0-linux64-x86_64/include"
 
 # Set Python path for includes and Torch
 PYTHON_BIN=python3
@@ -66,14 +74,16 @@ mkdir -p $BUILD_DIR
 
 # === 1. Compile OptiX Shader to PTX ===
 echo "📦 Compiling shaders.cu to PTX..."
-nvcc -ptx -arch=${CUDA_ARCH} -o ${BUILD_DIR}/shaders.ptx shaders.cu \
-  -I${OPTIX_INCLUDE} -I${CUDA_INCLUDE} ${CXX_STD}
+nvcc -ptx -std=c++17 \
+    -arch=sm_89 \
+    -I${OPTIX_INCLUDE} -I${CUDA_INCLUDE} -I${THRUST_INCLUDE} \
+    -o ${BUILD_DIR}/shaders.ptx shaders.cu
 
 # === 2. Compile CUDA Source ===
 echo "🔧 Compiling KNN.cu..."
 nvcc -Xcompiler -fPIC -c KNN.cu -o ${BUILD_DIR}/KNN.o \
   --gpu-architecture=compute_86 --gpu-code=${CUDA_ARCH} \
-  -I${OPTIX_INCLUDE} -I${CUDA_INCLUDE} ${ABI_FLAG} ${CXX_STD}
+  -I${OPTIX_INCLUDE} -I${CUDA_INCLUDE} -I${THRUST_INCLUDE} ${ABI_FLAG} ${CXX_STD}
 
 # === 3. Compile and link shared Python extension ===
 echo "🔗 Compiling bindings.cpp to shared object..."

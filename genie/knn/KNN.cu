@@ -33,18 +33,41 @@ extern "C" bool CUDA_KNN_Init(float chi_square_squared_radius, S_CUDA_KNN* knn) 
 
 	// *********************************************************************************************
 
-	FILE *f = fopen("genie/knn/build/shaders.ptx", "rb");
+	const char *ptxPath = "genie/knn/build/shaders.ptx";
+
+	/* Determine PTX file size first */
+	FILE *f = fopen(ptxPath, "rb");
 	if (!f) return false;
 	fseek(f, 0, SEEK_END);
 	int ptxCodeSize = ftell(f);
-	fseek(f, 0, SEEK_SET);
-
-	char *ptxCode = (char *)malloc(ptxCodeSize + 1);
-	if (!ptxCode) { fclose(f); return false; }
-	size_t readSize = fread(ptxCode, 1, ptxCodeSize, f);
 	fclose(f);
-	if (readSize != ptxCodeSize) { free(ptxCode); return false; }
-	ptxCode[ptxCodeSize] = '\0'; // Null-terminate for OptiX
+
+	/* Allocate buffers: ptxCode will hold the concatenated file contents, buffer is a temporary read buffer */
+	char *ptxCode = (char *)malloc(sizeof(char) * (ptxCodeSize + 1));
+	char *buffer = (char *)malloc(sizeof(char) * (ptxCodeSize + 1));
+	if (!ptxCode || !buffer) {
+		if (ptxCode) free(ptxCode);
+		if (buffer) free(buffer);
+		return false;
+	}
+
+	/* Initialize ptxCode as empty C-string so strcat works */
+	ptxCode[0] = '\0';
+
+	/* Re-open and read the file piecewise into ptxCode using fgets/strcat to emulate the requested behavior */
+	f = fopen(ptxPath, "rb");
+	if (!f) {
+		free(ptxCode);
+		free(buffer);
+		return false;
+	}
+
+	while (fgets(buffer, ptxCodeSize + 1, f) != NULL) {
+		strcat(ptxCode, buffer);
+	}
+
+	fclose(f);
+	free(buffer);
 
 	// *********************************************************************************************
 

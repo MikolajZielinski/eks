@@ -15,11 +15,11 @@ from nerfstudio.data.pixel_samplers import PixelSamplerConfig
 from genie.data.dataparsers import GENIEBlenderDataParserConfig
 from genie.genie_trainer import GENIETrainerConfig
 from genie.genie_model import GENIEModelConfig
-from genie.knn.knn_algorithms import TorchKNNConfig, OptixKNNConfig
+from genie.knn.knn_algorithms import TorchKNNConfig, OptixKNNConfig #, FaissIVFKNNConfig, FaissKNNConfig
 from genie.utils.schedulers import ChainedSchedulerConfig
 from genie.genie_pipeline import GENIEPipelineConfig
 
-MAX_NUM_ITERATIONS = 20000
+MAX_NUM_ITERATIONS = 30000
 
 genie = MethodSpecification(
     config=GENIETrainerConfig(
@@ -30,7 +30,9 @@ genie = MethodSpecification(
         pipeline=GENIEPipelineConfig(
             target_num_samples = 1 << 18,
             datamanager=VanillaDataManagerConfig(
-                dataparser=GENIEBlenderDataParserConfig(),
+                dataparser=GENIEBlenderDataParserConfig(
+                    alpha_color="white",
+                ),
                 pixel_sampler=PixelSamplerConfig(
                     rejection_sample_mask=False,
                 ),
@@ -39,9 +41,13 @@ genie = MethodSpecification(
             ),
             model=GENIEModelConfig(
                 knn_algorithm=OptixKNNConfig(
+                    chi_squared_radius=2.0,
                     n_neighbours=16,
                 ),
                 eval_num_rays_per_chunk=8192,
+                densify=False,
+                prune=True,
+                unfreeze_means=False,
                 near_plane=2.0,
                 far_plane=6.0,
                 background_color="white",
@@ -64,6 +70,10 @@ genie = MethodSpecification(
                 "scheduler": ChainedSchedulerConfig(max_steps=MAX_NUM_ITERATIONS),
             },
             "log_covs": {
+                "optimizer": AdamOptimizerConfig(lr=1e-3, eps=1e-15),
+                "scheduler": ChainedSchedulerConfig(max_steps=MAX_NUM_ITERATIONS),
+            },
+            "quats": {
                 "optimizer": AdamOptimizerConfig(lr=1e-3, eps=1e-15),
                 "scheduler": ChainedSchedulerConfig(max_steps=MAX_NUM_ITERATIONS),
             },

@@ -8,6 +8,7 @@ renders/
 __pycache__/
 exports/
 blender/
+blender_neuraleditor/
 edits/
 build/
 .env

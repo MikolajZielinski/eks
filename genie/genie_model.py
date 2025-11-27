@@ -219,6 +219,8 @@ class GENIEModel(Model):
                 param_groups["means"] = [param]
             elif name == "mlp_base.encoder.gauss_params.log_covs":
                 param_groups["log_covs"] = [param]
+            elif name == "mlp_base.encoder.gauss_params.quats":
+                param_groups["quats"] = [param]
             else:
                 fields.append(param)
 

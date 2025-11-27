@@ -26,7 +26,7 @@ class ChainedSchedulerConfig(SchedulerConfig):
     """The maximum number of steps."""
     gamma: float = 0.33
     """The learning rate decay factor."""
-    milestones: Tuple[int, ...] = (0.5, 0.75, 0.9)
+    milestones: Tuple[float, ...] = (0.5, 0.75, 0.9)
     """The milestone steps at which to decay the learning rate."""
 
 

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Literal, Dict, Any, Optional
+from typing import Literal, Dict, Any, Optional, Type
 from torch.cuda.amp.grad_scaler import GradScaler
 
 from nerfstudio.pipelines.dynamic_batch import DynamicBatchPipelineConfig, DynamicBatchPipeline
@@ -9,7 +9,7 @@ from nerfstudio.data.datamanagers.base_datamanager import VanillaDataManager
 class GENIEPipelineConfig(DynamicBatchPipelineConfig):
     """Configuration for the GENIEPipeline."""
 
-    _target: str = field(default_factory=lambda: GENIEPipeline)
+    _target: Type = field(default_factory=lambda: GENIEPipeline)
     """target class to instantiate"""
 
 

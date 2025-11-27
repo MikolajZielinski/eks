@@ -101,6 +101,98 @@ class ExportTriangleSoup():
 
 
 @dataclass
+class ExportTetrahedronSoup():
+    """
+    Export a triangle soup from a gaussians.
+    """
+    load_config: Path
+    """Path to the configuration file."""
+    output_filename: str = "tetrahedron_soup.ply"
+    """Name of the output file."""
+    scale: float = 0.1
+    """Scale factor for the triangles."""
+    scale_mesh: float = 1.0
+
+    def main(self) -> None:
+        """Export triangle soup"""
+
+        assert self.load_config.exists(), f"Configuration file {self.load_config} does not exist."
+        _, pipeline, _, _ = eval_setup(self.load_config)
+
+        model = pipeline.model
+        assert isinstance(model, GENIEModel), "Pipeline model must be GENIEModel for triangle soup export."
+        
+        with torch.no_grad():
+            means = model.field.mlp_base.encoder.means
+            covs = torch.exp(model.field.mlp_base.encoder.log_covs)
+            quats = model.field.mlp_base.encoder.quats
+
+            CONSOLE.print(f"Exporting tetrahedron soup with {means.shape[0]} gaussians.")
+
+            if covs.shape[1] == 2:
+                CONSOLE.print("Covariance matrices are 2D, conveerting to 3D.")
+                covs = torch.cat([covs, torch.ones(covs.shape[0], 1, device=covs.device) * 1e-6], dim=-1)
+
+            # Compute rotation matrices from quaternions
+            w, x, y, z = quats.unbind(-1)
+            xx = x * x
+            yy = y * y
+            zz = z * z
+            xy = x * y
+            xz = x * z
+            yz = y * z
+            wx = w * x
+            wy = w * y
+            wz = w * z
+            
+            row0 = torch.stack([1 - 2 * (yy + zz), 2 * (xy - wz), 2 * (xz + wy)], dim=-1)
+            row1 = torch.stack([2 * (xy + wz), 1 - 2 * (xx + zz), 2 * (yz - wx)], dim=-1)
+            row2 = torch.stack([2 * (xz - wy), 2 * (yz + wx), 1 - 2 * (xx + yy)], dim=-1)
+            
+            R = torch.stack([row0, row1, row2], dim=-2)
+            sigmas = torch.sqrt(covs)
+            eigenvectors = R
+
+            idx = torch.argsort(sigmas, descending=True, dim=1)
+            batch_indices = torch.arange(eigenvectors.shape[0], device=eigenvectors.device).unsqueeze(-1).expand(-1, 3)
+            top3_vecs = eigenvectors[batch_indices, :, idx]
+            top3_sigmas = sigmas[batch_indices, idx]
+
+            # Compute tetrahedrons
+            arms = top3_vecs * top3_sigmas.unsqueeze(1) * self.scale
+            center_np = (means * self.scale_mesh).detach().cpu().numpy()
+            arm1 = arms[:, :, 0].detach().cpu().numpy()
+            arm2 = arms[:, :, 1].detach().cpu().numpy()
+            arm3 = arms[:, :, 2].detach().cpu().numpy()
+            
+            v0 = center_np
+            v1 = center_np + arm1
+            v2 = center_np + arm2
+            v3 = center_np + arm3
+
+            # Stack all vertices: (N, 4, 3) -> (N*4, 3)
+            all_vertices = np.stack([v0, v1, v2, v3], axis=1).reshape(-1, 3)
+            
+            num_gaussians = means.shape[0]
+            base_indices = np.arange(num_gaussians) * 4
+            
+            f1 = np.stack([base_indices, base_indices + 2, base_indices + 1], axis=1)
+            f2 = np.stack([base_indices, base_indices + 1, base_indices + 3], axis=1)
+            f3 = np.stack([base_indices, base_indices + 3, base_indices + 2], axis=1)
+            f4 = np.stack([base_indices + 1, base_indices + 2, base_indices + 3], axis=1)
+            
+            all_faces = np.concatenate([f1, f2, f3, f4], axis=0)
+
+            # Save triangle soup
+            mesh = o3d.geometry.TriangleMesh()
+            mesh.vertices = o3d.utility.Vector3dVector(all_vertices)
+            mesh.triangles = o3d.utility.Vector3iVector(all_faces)
+            o3d.io.write_triangle_mesh(str(self.load_config.parent / self.output_filename), mesh)
+
+            CONSOLE.print(f"Exported tetrahedron soup to {self.load_config.parent / self.output_filename}")
+
+
+@dataclass
 class ExportPlyFromObj():
     """
     Export a point cloud sampled from a mesh .obj file to a .ply file, or batch process all .obj/.ply files in a folder.
@@ -328,6 +420,7 @@ class ExportPlyFromEdits():
 Commands = tyro.conf.FlagConversionOff[
     Union[
         Annotated[ExportTriangleSoup, tyro.conf.subcommand(name="triangles")],
+        Annotated[ExportTetrahedronSoup, tyro.conf.subcommand(name="tetrahedrons")],
         Annotated[ExportPlyFromObj, tyro.conf.subcommand(name="ply-from-obj")],
         Annotated[ExportPlyFromEdits, tyro.conf.subcommand(name="ply-from-edits")],
     ]

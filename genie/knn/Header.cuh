@@ -5,8 +5,8 @@
 #include "optix.h"
 #include "optix_stubs.h"
 
-#include <thrust/device_vector.h>
-#include <thrust/reduce.h>
+#include <cccl/thrust/device_vector.h>
+#include <cccl/thrust/reduce.h>
 
 #include <stdio.h>
 

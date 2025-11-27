@@ -1,3 +1,4 @@
+import csv
 import time
 import torch
 import open3d as o3d
@@ -45,6 +46,7 @@ class GENIETrainer(Trainer):
 
     def __init__(self, config: GENIETrainerConfig, local_rank: int = 0, world_size: int = 1) -> None:
         super().__init__(config=config, local_rank=local_rank, world_size=world_size)
+        self.total_time = 0.0
 
     def train(self) -> None:
         """Train the model."""
@@ -53,6 +55,11 @@ class GENIETrainer(Trainer):
             self.pipeline.datamanager.train_dataparser_outputs.save_dataparser_transform(
                 self.base_dir / "dataparser_transforms.json"
             )
+
+        # Create metrics.csv file and write header
+        time_path = self.base_dir / "metrics.csv"
+        with time_path.open("w", newline="") as f:
+            pass
 
         self._init_viewer_state()
         with TimeWriter(writer, EventName.TOTAL_TRAIN_TIME):
@@ -91,8 +98,17 @@ class GENIETrainer(Trainer):
                                 step, location=TrainingCallbackLocation.BEFORE_TRAIN_ITERATION
                             )
 
-                        # time the forward pass
+                        # time the forward pass and record duration to time.csv in the output dir
+                        start_time = time.perf_counter()
                         loss, loss_dict, metrics_dict = self.train_iteration(step)
+                        iter_time = time.perf_counter() - start_time
+                        self.total_time += iter_time
+
+                        if step % 100 == 0 or step == self.config.max_num_iterations - 1:
+                            time_path = self.base_dir / "metrics.csv"
+                            with time_path.open("a", newline="") as f:
+                                writer_csv = csv.writer(f)
+                                writer_csv.writerow([step, float(self.total_time), metrics_dict["psnr"].item()])
 
                         # training callbacks after the training iteration
                         for callback in self.callbacks:

@@ -52,23 +52,21 @@ class SplashEncoding(nn.Module):
             unifrom_means = self.init_mean_unifrom(1000000)
             means = torch.cat([means, unifrom_means], dim=0)
 
-        # means = torch.cat([means, self.init_mean(n_gausses)])
-        self.hash_encoding = HashEncoding()
-        self.means_hash = HashEncoding()
-
-        # if means.shape[0] > 40000:
-        #     idx = np.random.choice(means.shape[0], 40000, replace=False)
-        #     means = means[idx]
+        self.hash_encoding = HashEncoding(max_res=8192, log2_hashmap_size=21)
+        self.means_hash = HashEncoding(max_res=8192, log2_hashmap_size=21)
 
         # Initialize Gaussians
         self.total_gaus = means.shape[0]
         means = nn.Parameter(means, requires_grad=False)
         self.register_buffer("feats", self.means_hash(means))
         log_covs = nn.Parameter(torch.log(torch.ones(self.total_gaus, 3, device=self.device) * 0.0001))
+        quats = nn.Parameter(torch.zeros(self.total_gaus, 4, device=self.device))
+        quats.data[:, 0] = 1.0
         self.confidence = torch.ones_like(means[:, 0], device=self.device, requires_grad=False)
         self.gauss_params = torch.nn.ParameterDict({
             "means": means,
-            "log_covs": log_covs
+            "log_covs": log_covs,
+            "quats": quats
         })
         
         # Initialize KNN algorithm
@@ -150,7 +148,7 @@ class SplashEncoding(nn.Module):
     
     def densify(self, new_means: torch.Tensor, optimizers: Dict[str, torch.optim.Optimizer]) -> None:
         """
-        Add new means, feats, log_covs, and confidence entries, and refit KNN.
+        Add new means, feats, log_covs, quats, and confidence entries, and refit KNN.
         """
 
         if self.densify_gausses:
@@ -160,6 +158,10 @@ class SplashEncoding(nn.Module):
                 elif name == 'log_covs':
                     new_covs = torch.log(torch.ones(new_means.shape[0], 3, device=new_means.device) * 0.0001)
                     new_param = nn.Parameter(torch.cat([p, new_covs], dim=0), requires_grad=self.log_covs.requires_grad)
+                elif name == 'quats':
+                    new_quats = torch.zeros(new_means.shape[0], 4, device=new_means.device)
+                    new_quats[:, 0] = 1.0
+                    new_param = nn.Parameter(torch.cat([p, new_quats], dim=0), requires_grad=self.quats.requires_grad)
 
                 return new_param
 
@@ -177,7 +179,7 @@ class SplashEncoding(nn.Module):
 
     def prune(self, optimizers: Dict[str, torch.optim.Optimizer], threshold: float=0.1):
         """
-        Remove all means, feats, log_covs, and confidence entries with confidence lower than threshold.
+        Remove all means, feats, log_covs, quats, and confidence entries with confidence lower than threshold.
         """
 
         if self.prune_gausses:
@@ -195,6 +197,7 @@ class SplashEncoding(nn.Module):
             self.confidence = self.confidence[mask]
             self.total_gaus = self.means.shape[0]
             self.feats = self.means_hash(self.means)
+            
             # Refit KNN with new means
             print(f"Pruned to {self.means.shape[0]} gaussians.")
 
@@ -205,6 +208,9 @@ class SplashEncoding(nn.Module):
         self.gauss_params["means"] = nn.Parameter(self.init_mean(n_gausses), requires_grad=False)
         self.feats = self.means_hash(self.means)
         self.gauss_params["log_covs"] = nn.Parameter(torch.log(torch.ones(n_gausses, 3, device=self.device) * 0.0001), requires_grad=self.log_covs.requires_grad)
+        quats = torch.zeros(n_gausses, 4, device=self.device)
+        quats[:, 0] = 1.0
+        self.gauss_params["quats"] = nn.Parameter(quats, requires_grad=self.quats.requires_grad)
         self.confidence = torch.ones(n_gausses, device=self.device)
         self.total_gaus = n_gausses
         print(f"Reinitialized to {n_gausses} gaussians.")
@@ -227,16 +233,43 @@ class SplashEncoding(nn.Module):
     @property
     def log_covs(self) -> Tensor:
         return self.gauss_params["log_covs"]
+
+    @property
+    def quats(self) -> Tensor:
+        return self.gauss_params["quats"]
         
+    def quat_to_rotmat(self, quats):
+        w, x, y, z = quats.unbind(-1)
+        
+        xx = x * x
+        yy = y * y
+        zz = z * z
+        xy = x * y
+        xz = x * z
+        yz = y * z
+        wx = w * x
+        wy = w * y
+        wz = w * z
+        
+        row0 = torch.stack([1 - 2 * (yy + zz), 2 * (xy - wz), 2 * (xz + wy)], dim=-1)
+        row1 = torch.stack([2 * (xy + wz), 1 - 2 * (xx + zz), 2 * (yz - wx)], dim=-1)
+        row2 = torch.stack([2 * (xz - wy), 2 * (yz + wx), 1 - 2 * (xx + yy)], dim=-1)
+        
+        return torch.stack([row0, row1, row2], dim=-2)
+
     def interpolate(self, coords, nearest_gausses_indicies):
 
         if self.training:
             self.feats = self.means_hash(self.means)
         nearest_features = self.feats[nearest_gausses_indicies]
         nearest_covs = torch.exp(self.log_covs[nearest_gausses_indicies])
+        nearest_quats = self.quats[nearest_gausses_indicies]
+        nearest_quats = nearest_quats / nearest_quats.norm(dim=-1, keepdim=True)
+        R = self.quat_to_rotmat(nearest_quats)
 
         diff = coords[:, None, :] - self.means[nearest_gausses_indicies]
-        mdist = (diff ** 2 / nearest_covs).sum(-1)
+        diff_local = torch.matmul(R.transpose(-1, -2), diff.unsqueeze(-1)).squeeze(-1)
+        mdist = (diff_local ** 2 / nearest_covs).sum(-1)
 
         # Normalization constant for diagonal Gaussian
         gau_weights = torch.exp(-0.5 * mdist)

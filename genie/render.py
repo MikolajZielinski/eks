@@ -43,6 +43,7 @@ from nerfstudio.utils.rich_utils import CONSOLE, ItersPerSecColumn
 from nerfstudio.utils.scripts import run_command
 
 from genie.genie_model import GENIEModel
+from genie.utils.load_deformed import load_deformed_tetrahedrons
 
 
 def _render_trajectory_video(
@@ -811,13 +812,11 @@ class DatasetRender(BaseRender):
                     # Load edited pointcloud
                     assert (self.load_config.parent / "camera_path").exists(), "Camera path directory does not exist"
                     ply_path = self.load_config.parent / f"camera_path/{camera_idx:05d}.ply"
-                    pcd = o3d.io.read_point_cloud(str(ply_path))
-                    points = torch.from_numpy(np.asarray(pcd.points)).float().to(pipeline.device)
-                    pipeline.model.field.mlp_base.encoder.means.data = points
+                    load_deformed_tetrahedrons(pipeline.model, str(ply_path))
 
                     # Update occupancy grid
                     pipeline.model.occupancy_grid.train()
-                    for step in range(100):
+                    for step in range(10):
                         pipeline.model.occupancy_grid.update_every_n_steps(
                             step=step,
                             occ_eval_fn=lambda x: pipeline.model.field.density_fn(x) * pipeline.model.config.render_step_size,

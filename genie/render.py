@@ -812,7 +812,7 @@ class DatasetRender(BaseRender):
                     # Load edited pointcloud
                     assert (self.load_config.parent / "camera_path").exists(), "Camera path directory does not exist"
                     ply_path = self.load_config.parent / f"camera_path/{camera_idx:05d}.ply"
-                    load_deformed_tetrahedrons(pipeline.model, str(ply_path))
+                    load_deformed_tetrahedrons(pipeline.model, str(ply_path), "/home/mikolaj/Git/genie_3d/outputs/chair/genie/knnx/tetrahedron_soup.ply")
 
                     # Update occupancy grid
                     pipeline.model.occupancy_grid.train()

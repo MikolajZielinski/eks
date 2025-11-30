@@ -18,77 +18,104 @@ def matrix_to_quaternion(M):
     
     return torch.tensor(q_wxyz, dtype=torch.float32, device=M.device)
 
-def load_deformed_tetrahedrons(model: GENIEModel, ply_path: str, scale: float = 0.1, scale_mesh: float = 1.0):
+def load_deformed_tetrahedrons(model: GENIEModel, ply_path: str, ref_ply_path: str, scale: float = 0.1, scale_mesh: float = 1.0):
     """
-    Load deformed tetrahedrons from a PLY file and update the model's Gaussians.
+    Load deformed tetrahedrons from a PLY file and update the model's Gaussians using deformation gradient.
     
     Args:
         model: The GENIEModel to update.
         ply_path: Path to the PLY file containing the deformed tetrahedron soup.
+        ref_ply_path: Path to the PLY file containing the reference (undeformed) tetrahedron soup.
         scale: The scale factor used during export for the arms.
         scale_mesh: The scale factor used during export for the means.
     """
     
-    # Load the mesh
+    # Load the deformed mesh
     mesh = o3d.io.read_triangle_mesh(ply_path)
     vertices = np.asarray(mesh.vertices)
+    
+    # Load the reference mesh
+    ref_mesh = o3d.io.read_triangle_mesh(ref_ply_path)
+    ref_vertices = np.asarray(ref_mesh.vertices)
     
     num_vertices = vertices.shape[0]
     num_gaussians = num_vertices // 4
     print(f"Loading {num_gaussians} Gaussians.")
     
-    # The exporter stacks vertices as [v0, v1, v2, v3] for each Gaussian.
-    vertices_reshaped = vertices.reshape(num_gaussians, 4, 3)
-    v0 = vertices_reshaped[:, 0, :] # Center
-    v1 = vertices_reshaped[:, 1, :] # Center + Arm 1
-    v2 = vertices_reshaped[:, 2, :] # Center + Arm 2
-    v3 = vertices_reshaped[:, 3, :] # Center + Arm 3
+    assert ref_vertices.shape[0] == num_vertices, "Reference and deformed meshes must have the same number of vertices"
 
-    # Convert to torch tensors
+    # The exporter stacks vertices as [v0, v1, v2, v3] for each Gaussian.
+    # v0 is center, v1, v2, v3 are tips of the arms
+    
+    def get_means_and_arms(verts):
+        verts_reshaped = verts.reshape(num_gaussians, 4, 3)
+        v0 = verts_reshaped[:, 0, :] # Center
+        v1 = verts_reshaped[:, 1, :] # Center + Arm 1
+        v2 = verts_reshaped[:, 2, :] # Center + Arm 2
+        v3 = verts_reshaped[:, 3, :] # Center + Arm 3
+        
+        means = v0
+        arm1 = v1 - v0
+        arm2 = v2 - v0
+        arm3 = v3 - v0
+        
+        # Stack arms to form the matrix M where columns are arms
+        # M shape: (N, 3, 3)
+        M = np.stack([arm1, arm2, arm3], axis=2)
+        return means, M
+
+    means_def_np, M_def_np = get_means_and_arms(vertices)
+    _, M_ref_np = get_means_and_arms(ref_vertices)
+
     device = model.field.mlp_base.encoder.means.device
-    v0 = torch.tensor(v0, dtype=torch.float32, device=device)
-    v1 = torch.tensor(v1, dtype=torch.float32, device=device)
-    v2 = torch.tensor(v2, dtype=torch.float32, device=device)
-    v3 = torch.tensor(v3, dtype=torch.float32, device=device)
     
-    # Recover means
-    new_means = v0 / scale_mesh    
-    arm1 = v1 - v0
-    arm2 = v2 - v0
-    arm3 = v3 - v0
+    # Convert to tensors
+    means_def = torch.tensor(means_def_np, dtype=torch.float32, device=device)
+    M_def = torch.tensor(M_def_np, dtype=torch.float32, device=device)
+    M_ref = torch.tensor(M_ref_np, dtype=torch.float32, device=device)
     
-    # Stack arms to form the matrix of principal axes (scaled eigenvectors)
-    M = torch.stack([arm1, arm2, arm3], dim=2)
-    M_scaled = M / scale
+    # Compute Deformation Gradient A
+    # M_def = A @ M_ref  =>  A = M_def @ M_ref^-1
+    M_ref_inv = torch.linalg.inv(M_ref)
+    A = torch.matmul(M_def, M_ref_inv)
     
-    # Perform SVD on the scaled arms matrix directly to recover the new Gaussian parameters
-    # The arms represent the transformed axes. If M is the matrix of arms, the covariance is M @ M.T
-    # SVD: M = U @ S @ Vh
-    # Covariance = (U @ S @ Vh) @ (Vh.T @ S @ U.T) = U @ S^2 @ U.T
-    # Thus, U represents the rotation (orientation) and S represents the scales (sigmas)
-    U, S, Vh = torch.linalg.svd(M_scaled)
+    # Get current model covariance
+    encoder = model.field.mlp_base.encoder
     
-    new_sigmas = S
-    R_clean = U
+    old_variances = torch.exp(encoder.log_covs) # (N, 3)
+    old_quats = encoder.quats # (N, 4)
     
-    # Check determinant to ensure right-handed system (proper rotation matrix)
-    # Since the Gaussian is symmetric, flipping an axis doesn't change the shape, 
-    # but we need a valid rotation matrix (det=1) for the quaternion conversion.
-    det = torch.linalg.det(R_clean)
+    # Construct rotation matrix
+    R_old = encoder.quat_to_rotmat(old_quats) # (N, 3, 3)
+    
+    # Construct full covariance matrix Sigma_old
+    # Sigma = R * diag(var) * R^T
+    Sigma_old = torch.matmul(R_old, torch.matmul(torch.diag_embed(old_variances), R_old.transpose(-2, -1)))
+    
+    # Update Covariance: Sigma_new = A * Sigma_old * A^T
+    Sigma_new = torch.matmul(A, torch.matmul(Sigma_old, A.transpose(-2, -1)))
+    
+    # Decompose Sigma_new to get new parameters
+    U, S, _ = torch.linalg.svd(Sigma_new)
+    
+    new_variances = S
+    new_R = U
+    
+    # Ensure right-handed rotation
+    det = torch.linalg.det(new_R)
     mask = det < 0
     if mask.any():
-        # Flip the last column (z-axis) for matrices with negative determinant
-        R_clean[mask, :, 2] *= -1
-
-    new_quats = matrix_to_quaternion(R_clean)
+        new_R[mask, :, 2] *= -1
         
-    new_covs = new_sigmas ** 2
-    new_log_covs = torch.log(torch.clamp(new_covs, min=1e-6))
+    new_quats = matrix_to_quaternion(new_R)
+    new_log_covs = torch.log(torch.clamp(new_variances, min=1e-6))
     
-    # Update the model
-    encoder = model.field.mlp_base.encoder    
+    # Update means
+    new_means = means_def / scale_mesh
+    
+    # Update model parameters
     encoder.means.data = new_means
     encoder.log_covs.data = new_log_covs
     encoder.quats.data = new_quats
     
-    print("Model updated with deformed tetrahedrons.")
+    print("Model updated with deformed tetrahedrons using deformation gradient.")

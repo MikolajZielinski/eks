@@ -1,6 +1,7 @@
 # General
 data
 !genie/data/
+genie_demo_data/
 *.egg-info/
 outputs/
 renders/
@@ -11,6 +12,7 @@ blender/
 blender_neuraleditor/
 edits/
 build/
+eval/
 .env
 *.yml
 *.ipynb

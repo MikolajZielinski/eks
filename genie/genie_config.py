@@ -15,7 +15,7 @@ from nerfstudio.data.pixel_samplers import PixelSamplerConfig
 from genie.data.dataparsers import GENIEBlenderDataParserConfig
 from genie.genie_trainer import GENIETrainerConfig
 from genie.genie_model import GENIEModelConfig
-from genie.knn.knn_algorithms import TorchKNNConfig, OptixKNNConfig #, FaissIVFKNNConfig, FaissKNNConfig
+from genie.knnx.knn_algorithms import OptixKNNConfig
 from genie.utils.schedulers import ChainedSchedulerConfig
 from genie.genie_pipeline import GENIEPipelineConfig
 

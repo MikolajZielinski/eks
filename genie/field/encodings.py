@@ -12,7 +12,7 @@ from torch import Tensor, nn
 from nerfstudio.field_components.encodings import HashEncoding
 from nerfstudio.field_components.spatial_distortions import SpatialDistortion
 
-from genie.knn.knn_algorithms import BaseKNN
+from genie.knnx.knn_algorithms import BaseKNN
 
 
 class SplashEncoding(nn.Module):
@@ -282,9 +282,8 @@ class SplashEncoding(nn.Module):
     def forward(self, coords):
         
         with torch.no_grad():
-            sigma_max, _ = torch.sqrt(torch.exp(self.log_covs)).max(dim=-1)
-            pad_means = torch.cat([self.means, sigma_max.unsqueeze(-1)], dim=1)
-            self.knn.fit(pad_means)
+            scales = torch.sqrt(torch.exp(self.log_covs))
+            self.knn.fit(self.means, scales, self.quats)
             nearest_gausses_indicies, self.distances = self.knn.get_nearest_neighbours(coords)
             max_idx = self.means.shape[0] - 1
             nearest_gausses_indicies = torch.clamp(nearest_gausses_indicies, min=0, max=max_idx)

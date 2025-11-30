@@ -1,3 +1,5 @@
+import torch
+
 from dataclasses import dataclass, field
 from typing import Literal, Dict, Any, Optional, Type
 from torch.cuda.amp.grad_scaler import GradScaler
@@ -50,6 +52,9 @@ class GENIEPipeline(DynamicBatchPipeline):
 
         self.model.update_to_step(step)
         self.load_state_dict(state)
-        self.model.field.mlp_base.encoder.knn.fit(self.model.field.mlp_base.encoder.means)
+        means = self.model.field.mlp_base.encoder.means
+        scales = torch.sqrt(torch.exp(self.model.field.mlp_base.encoder.log_covs))
+        quats = self.model.field.mlp_base.encoder.quats
+        self.model.field.mlp_base.encoder.knn.fit(means, scales, quats)
 
     

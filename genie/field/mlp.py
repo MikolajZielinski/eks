@@ -30,7 +30,7 @@ from nerfstudio.utils.rich_utils import CONSOLE
 from nerfstudio.field_components.spatial_distortions import SpatialDistortion
 
 from genie.field.encodings import SplashEncoding
-from genie.knn.knn_algorithms import BaseKNN
+from genie.knnx.knn_algorithms import BaseKNN
 
 
 def activation_to_tcnn_string(activation: Union[nn.Module, None]) -> str:

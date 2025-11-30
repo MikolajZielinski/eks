@@ -2,7 +2,7 @@
 
 // *** *** *** *** ***
 
-PYBIND11_MODULE(optix_knnx, m) {
+PYBIND11_MODULE(knnx, m) {
 	m.doc() = "OptiX KNN library for Python";
 
 	// *********************************************************************************************

@@ -100,26 +100,28 @@ extern "C" __global__ void __anyhit__() {
 			rp->data[rp->neighbors_num++] = tmp1;
 			optixIgnoreIntersection();
 		} else {
-			if (
-				__fmaf_rn(
-					t_hit,
-					t_hit,
-					-(optixLaunchParams.four_times_max_R_squared_over_chi_square_squared_radius * tmp2.x)
-				) <= 0
-			)
+			float distance;
+			asm volatile (
+				"sqrt.approx.ftz.f32 %0, %1;" :
+				"=f"(distance) :
+				"f"(tmp2.x)
+			);
+
+			if (t_hit <= (distance * optixLaunchParams.max_s) + optixLaunchParams.max_R)
 				optixIgnoreIntersection();
 		}
 	} else {
 		if (rp->neighbors_num < optixLaunchParams.K)
 			optixIgnoreIntersection();
-		else {		
-			if (
-				__fmaf_rn(
-					t_hit,
-					t_hit,
-					-(optixLaunchParams.four_times_max_R_squared_over_chi_square_squared_radius * rp->data[optixLaunchParams.K - 1].x)
-				) <= 0
-			)
+		else {
+			float distance;
+			asm volatile (
+				"sqrt.approx.ftz.f32 %0, %1;" :
+				"=f"(distance) :
+				"f"(rp->data[optixLaunchParams.K - 1].x)
+			);
+
+			if (t_hit <= (distance * optixLaunchParams.max_s) + optixLaunchParams.max_R)
 				optixIgnoreIntersection();
 		}
 	}

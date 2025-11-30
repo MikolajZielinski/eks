@@ -21,8 +21,8 @@ struct SbtRecord {
 
 struct SLaunchParams {
 	float3 *queried_points;
+	float max_s;
 	float max_R;
-	float four_times_max_R_squared_over_chi_square_squared_radius;
 	OptixTraversableHandle AS;
 	int *indices;
 	float *distances_squared;

@@ -24,7 +24,7 @@ from nerfstudio.models.base_model import Model, ModelConfig
 from nerfstudio.utils import colormaps
 
 from genie.field.field import GENIEField
-from genie.knn.knn_algorithms import BaseKNNConfig, BaseKNN
+from genie.knnx.knn_algorithms import BaseKNNConfig, BaseKNN
 from genie.utils.viewer_utils import ViewerPointCloud, ViewerOccupancyGrid, ViewerAABB
 from genie.utils.losses import distortion
 

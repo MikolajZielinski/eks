@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from nerfstudio.configs.base_config import InstantiateConfig
 from typing import Type
 
-from genie.knnx import optix_knnx
+from genie.knnx import knnx
 
 
 @dataclass
@@ -52,7 +52,7 @@ class OptixKNN(BaseKNN):
     def __init__(self, config: OptixKNNConfig):
         super().__init__(config)
 
-        self.knn = optix_knnx.CPyOptiXKNN(config.chi_squared_radius)
+        self.knn = knnx.CPyOptiXKNN(config.chi_squared_radius)
 
     def fit(self, means: torch.Tensor, scales: torch.Tensor, quaternions: torch.Tensor):
         """

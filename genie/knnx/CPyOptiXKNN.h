@@ -55,6 +55,7 @@ private:
 
 	OptixTraversableHandle IAS;
 
+	float max_s;
 	float max_R;
 
 	// *** *** *** *** ***

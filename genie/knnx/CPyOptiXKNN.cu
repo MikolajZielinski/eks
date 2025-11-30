@@ -55,7 +55,7 @@ CPyOptiXKNN::CPyOptiXKNN(float chi_square_squared_radius) {
 
 	// *********************************************************************************************
 
-	FILE *f = fopen("/home/mikolaj/Git/genie_3d/genie/knnx/build/shaders.ptx", "rb");
+	FILE *f = fopen("genie/knnx/build/shaders.ptx", "rb");
 	fseek(f, 0, SEEK_END);
 	int shadersSize = ftell(f);
 	fseek(f, 0, SEEK_SET);
@@ -701,13 +701,15 @@ void CPyOptiXKNN::Fit_CUDA(
 	// *********************************************************************************************
 
 	try {
-		max_R = sqrtf(chi_square_squared_radius) * (*thrust::max_element(
+		max_s = *thrust::max_element(
 			thrust::device_pointer_cast((float *)s),
 			thrust::device_pointer_cast((float *)s) + (3 * number_of_Gaussians)
-		));
+		);
 	} catch (...) {
 		throw 0;
 	}
+
+	max_R = sqrtf(chi_square_squared_radius) * max_s;
 }
 
 // *** *** *** *** ***
@@ -726,8 +728,8 @@ void CPyOptiXKNN::KNeighbors_CUDA(
 	SLaunchParams launchParams;
 
 	launchParams.queried_points = queried_points;
+	launchParams.max_s = max_s;
 	launchParams.max_R = max_R;
-	launchParams.four_times_max_R_squared_over_chi_square_squared_radius = (4.0f * max_R * max_R) / chi_square_squared_radius;
 	launchParams.AS = IAS;
 	launchParams.indices = indices;
 	launchParams.distances_squared = distances_squared;

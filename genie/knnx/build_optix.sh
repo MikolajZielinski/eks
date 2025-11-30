@@ -96,7 +96,7 @@ g++ -std=c++17 -fPIC -c CPyOptiXKNN.cpp -o ${BUILD_DIR}/CPyOptiXKNN.o \
   -I${PYTORCH_API_DIR}
 
 
-g++ -shared -fPIC PyOptiXKNN.cpp ${BUILD_DIR}/CPyOptiXKNN.cu.o ${BUILD_DIR}/CPyOptiXKNN.o -o optix_knnx.so \
+g++ -shared -fPIC PyOptiXKNN.cpp ${BUILD_DIR}/CPyOptiXKNN.cu.o ${BUILD_DIR}/CPyOptiXKNN.o -o knnx.so \
   ${CXX_STD} ${ABI_FLAG} ${PYBIND11_INCLUDES} \
   -I${CUDA_INCLUDE} \
   -I${OPTIX_INCLUDE} \

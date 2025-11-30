@@ -24,7 +24,7 @@ from nerfstudio.fields.base_field import Field, get_normalized_directions
 from nerfstudio.field_components.encodings import SHEncoding
 
 from genie.field.mlp import MLP, MLPWithHashEncoding
-from genie.knn.knn_algorithms import BaseKNN
+from genie.knnx.knn_algorithms import BaseKNN
 
 
 class GENIEField(Field):

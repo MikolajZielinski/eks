@@ -19,16 +19,19 @@ class ViewerPointCloud(ViewerElement[bool]):
 
     scene_handle: PointCloudHandle
 
-    def __init__(self, name: str, aabb: SceneBox, points: np.ndarray, confidence: np.ndarray, visible: bool = True):
+    def __init__(self, name: str, aabb: SceneBox, points: np.ndarray, confidence: np.ndarray, gradients: np.ndarray = None, show_gradients: bool = False, visible: bool = True):
         self.aabb = aabb
         self.points = points
         self.confidence = confidence
+        self.gradients = gradients
+        self.show_gradients = show_gradients
         super().__init__(name, visible=visible)
 
-    def update(self, points: np.ndarray, confidence: np.ndarray) -> None:
+    def update(self, points: np.ndarray, confidence: np.ndarray, gradients: np.ndarray = None) -> None:
         """Update the point cloud with new points."""
         self.points = points
         self.confidence = confidence
+        self.gradients = gradients
         if self.viser_server is not None:
             self._create_scene_handle(self.viser_server)
 
@@ -40,10 +43,24 @@ class ViewerPointCloud(ViewerElement[bool]):
 
         pcd = trimesh.PointCloud(points)
 
-        color_coeffs = np.random.uniform(0.4, 1.0, size=(pcd.vertices.shape[0]))
-        colors = np.tile((0, 255, 255), pcd.vertices.shape[0]).reshape(-1, 3) * color_coeffs[:, None]
-        colors[:, 1] *= (1 - self.confidence)
-        colors[:, 2] *= self.confidence
+        if self.show_gradients and self.gradients is not None:
+            # Normalize gradients for visualization
+            grads = self.gradients
+            max_grad = np.max(grads) if grads.size > 0 else 1.0
+            if max_grad == 0: max_grad = 1.0
+            norm_grads = grads / max_grad
+            
+            # Map gradients to Red (high gradient) -> Blue (low gradient)
+            # Or simply use intensity in Red channel
+            colors = np.zeros((pcd.vertices.shape[0], 3))
+            colors[:, 0] = norm_grads * 255.0  # Red channel proportional to gradient
+            colors[:, 2] = (1.0 - norm_grads) * 255.0 # Blue channel inverse proportional
+            
+        else:
+            color_coeffs = np.random.uniform(0.4, 1.0, size=(pcd.vertices.shape[0]))
+            colors = np.tile((0, 255, 255), pcd.vertices.shape[0]).reshape(-1, 3) * color_coeffs[:, None]
+            colors[:, 1] *= (1 - self.confidence)
+            colors[:, 2] *= self.confidence
 
         self.scene_handle = viser_server.scene.add_point_cloud(
             f"/{self.name}",

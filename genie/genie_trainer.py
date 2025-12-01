@@ -31,11 +31,11 @@ class GENIETrainerConfig(TrainerConfig):
     """Step at which to start pruning the MLP encoder"""
     pruning_interval: int = 1000
     """Interval at which to prune the MLP encoder"""
-    pruning_stop_step: int = 15000
+    pruning_stop_step: int = 14000
     """Step at which to stop pruning the MLP encoder"""
     unfreeze_means_step: int = 500
     """Step at which to unfreeze the means of the MLP encoder"""
-    freeze_means_step: int = 10000
+    freeze_means_step: int = 15000
     """Step at which to freeze the means of the MLP encoder"""
 
 

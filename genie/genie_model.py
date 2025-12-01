@@ -89,7 +89,6 @@ class GENIEModel(Model):
 
     def __init__(self, config: GENIEModelConfig, **kwargs) -> None:
         super().__init__(config=config, **kwargs)
-        self.densify_buffer = None  # Will be initialized as a CPU tensor
 
     def populate_modules(self):
         """Set the fields and modules."""
@@ -162,6 +161,8 @@ class GENIEModel(Model):
             aabb=self.scene_box, 
             points=self.field.mlp_base.encoder.gauss_params["means"].detach().cpu().numpy(),
             confidence=self.field.mlp_base.encoder.confidence.detach().cpu().numpy(),
+            gradients=self.field.mlp_base.encoder.xyz_gradient_accum.detach().cpu().numpy(),
+            show_gradients=True,
         )
         self.viewer_occupancy_grid_handle = ViewerOccupancyGrid(
             name="occupancy_grid",
@@ -192,7 +193,8 @@ class GENIEModel(Model):
             )
             self.viewer_point_cloud_handle.update(
                 points=self.field.mlp_base.encoder.gauss_params["means"].detach().cpu().numpy(),
-                confidence=self.field.mlp_base.encoder.confidence.detach().cpu().numpy()
+                confidence=self.field.mlp_base.encoder.confidence.detach().cpu().numpy(),
+                gradients=self.field.mlp_base.encoder.xyz_gradient_accum.detach().cpu().numpy(),
             )
 
         return [
@@ -234,13 +236,15 @@ class GENIEModel(Model):
         if used_gb > self.config.max_gb:
             print(f"[Densification] Skipped: CUDA memory usage {used_gb:.2f}GB > {self.config.max_gb}GB")
             return False
-        # Densify from buffer if available
-        if self.densify_buffer is not None and self.densify_buffer.shape[0] > 0:
-            # Move to CUDA for densification
-            densify_points = self.densify_buffer.to(self.device)
-            self.field.mlp_base.encoder.densify(densify_points, optimizers=optimizers)
-            self.densify_buffer = None
+        
+        if self.config.densify:
+            # Calculate scene extent for splitting threshold
+            extent = self.scene_aabb[3:] - self.scene_aabb[:3]
+            scene_extent = extent.max().item()
+            
+            self.field.mlp_base.encoder.densify_and_split(optimizers, scene_extent=scene_extent)
             return True
+            
         return False
 
     def get_outputs(self, ray_bundle: RayBundle):
@@ -258,8 +262,6 @@ class GENIEModel(Model):
             )
 
         field_outputs = self.field(ray_samples)
-        # if self.config.use_gradient_scaling:
-            # field_outputs = scale_gradients_by_distance_squared(field_outputs, ray_samples)
 
         # accumulation
         packed_info = nerfacc.pack_info(ray_indices, num_rays)
@@ -272,50 +274,7 @@ class GENIEModel(Model):
         weights = trans * alphas
         weights = weights[..., None]
 
-        positions = self.field.get_sampling_positions(ray_samples)
-        distances = self.field.mlp_base.encoder.distances
-
-        # Compute maximum alpha per ray and their indices
-        num_samples = alphas.shape[0]
-
-        # Get max alpha per ray
-        max_alpha_per_ray = torch.zeros(num_rays, device=alphas.device)
-        max_alpha_per_ray = max_alpha_per_ray.scatter_reduce(
-            0, ray_indices, alphas, reduce="amax", include_self=False
-        )
-
-        is_max = (alphas == max_alpha_per_ray[ray_indices])
-        sample_indices = torch.arange(num_samples, device=alphas.device)
-        max_sample_indices = torch.full((num_rays,), -1, dtype=torch.long, device=alphas.device)
-        masked_indices = torch.where(is_max, sample_indices, torch.full_like(sample_indices, -1))
-        max_sample_indices = max_sample_indices.scatter_reduce(
-            0, ray_indices, masked_indices, reduce="amax", include_self=False
-        )
-
-        # Remove rays that had no samples (index == -1)
-        valid = max_sample_indices != -1
-        selected_positions = positions[max_sample_indices[valid]]
-        selected_distances = distances[max_sample_indices[valid]]
-        selected_alphas = alphas[max_sample_indices[valid]]
-
-        opacity_thr = 0.5
-        distance_thr = 0.001
-
-        densify_cnaditates = torch.logical_and(selected_alphas > opacity_thr, selected_distances[:, 0] > distance_thr)
-        selected_positions = selected_positions[densify_cnaditates]
-        # Move to CPU for buffer
-        selected_positions_cpu = selected_positions.detach().cpu()
-        # Initialize or append to buffer
-        if self.densify_buffer is None:
-            self.densify_buffer = selected_positions_cpu
-        else:
-            self.densify_buffer = torch.cat([self.densify_buffer, selected_positions_cpu], dim=0)
-        # Keep only random 10k points in buffer
-        if self.densify_buffer.shape[0] > 10000:
-            idx = torch.randperm(self.densify_buffer.shape[0])[:10000]
-            self.densify_buffer = self.densify_buffer[idx]
-        # Set selected_positions to None (no direct densification here)
-        self.selected_positions = None
+        # Removed densify_buffer collection logic here
 
         rgb = self.renderer_rgb(
             rgb=field_outputs[FieldHeadNames.RGB],

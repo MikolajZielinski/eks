@@ -57,7 +57,7 @@ class SplashEncoding(nn.Module):
 
         # Initialize Gaussians
         self.total_gaus = means.shape[0]
-        means = nn.Parameter(means, requires_grad=False)
+        means = nn.Parameter(means)
         self.register_buffer("feats", self.means_hash(means))
         log_covs = nn.Parameter(torch.log(torch.ones(self.total_gaus, 3, device=self.device) * 0.0001))
         quats = nn.Parameter(torch.zeros(self.total_gaus, 4, device=self.device))
@@ -71,6 +71,18 @@ class SplashEncoding(nn.Module):
         
         # Initialize KNN algorithm
         self.knn = knn_algorithm
+
+        # Gradient accumulation buffers
+        self.xyz_gradient_accum = torch.zeros(self.total_gaus, device=self.device)
+        self.denom = torch.zeros(self.total_gaus, device=self.device)
+
+        if self.unfreeze_gausses:
+            self.gauss_params["means"].register_hook(self._grad_hook)
+
+    def _grad_hook(self, grad):
+        if grad.shape[0] == self.xyz_gradient_accum.shape[0]:
+            self.xyz_gradient_accum += grad.norm(dim=-1)
+            self.denom += 1
 
     def init_mean(self, N):
         print(f'Total number of gauss: {N}')
@@ -155,6 +167,8 @@ class SplashEncoding(nn.Module):
             def param_fn(name: str, p: Tensor) -> Tensor:
                 if name == 'means':
                     new_param = nn.Parameter(torch.cat([p, new_means], dim=0), requires_grad=self.means.requires_grad)
+                    if self.unfreeze_gausses:
+                        new_param.register_hook(self._grad_hook)
                 elif name == 'log_covs':
                     new_covs = torch.log(torch.ones(new_means.shape[0], 3, device=new_means.device) * 0.0001)
                     new_param = nn.Parameter(torch.cat([p, new_covs], dim=0), requires_grad=self.log_covs.requires_grad)
@@ -174,8 +188,146 @@ class SplashEncoding(nn.Module):
             new_confidence = torch.ones(new_means.shape[0], device=new_means.device)
             self.confidence = torch.cat([self.confidence, new_confidence], dim=0)
             self.total_gaus = self.means.shape[0]
+            
+            # Resize accumulators
+            self.xyz_gradient_accum = torch.zeros(self.total_gaus, device=self.device)
+            self.denom = torch.zeros(self.total_gaus, device=self.device)
+            
             self.feats = self.means_hash(self.means)
             print(f'New total number of gauss: {self.means.shape[0]}')
+
+    def densify_and_split(self, optimizers: Dict[str, torch.optim.Optimizer], scene_extent: float, grad_threshold: float = 0.005):
+        """
+        Densify gaussians based on accumulated gradients:
+        - Clone: High gradient, small scale.
+        - Split: High gradient, large scale.
+        """
+        if not self.densify_gausses:
+            return
+
+        # Safety check for max gaussians to prevent explosion
+        if self.total_gaus > 2000000:
+             print(f"Skipping densification: reached {self.total_gaus} gaussians (limit 2M).")
+             # Reset accumulators even if we skip to avoid stale gradients piling up
+             self.xyz_gradient_accum.zero_()
+             self.denom.zero_()
+             return
+
+        grads = self.xyz_gradient_accum / self.denom.clamp(min=1)
+        grads[self.denom == 0] = 0.0
+        
+        # Reset accumulators
+        self.xyz_gradient_accum.zero_()
+        self.denom.zero_()
+
+        # Identify candidates
+        selected_pts_mask = torch.where(grads >= grad_threshold, True, False)
+        # Exclude points with invalid scales
+        selected_pts_mask = torch.logical_and(selected_pts_mask, torch.max(torch.exp(self.log_covs), dim=1).values > 0.0)
+
+        if not selected_pts_mask.any():
+            return
+
+        print(f"Densifying: found {selected_pts_mask.sum()} candidates.")
+
+        # Determine scale (std)
+        scales = torch.sqrt(torch.exp(self.log_covs))
+        max_scale = torch.max(scales, dim=1).values
+        
+        percent_max_extent = 0.01 * scene_extent
+        
+        split_mask = torch.logical_and(selected_pts_mask, max_scale > percent_max_extent)
+        clone_mask = torch.logical_and(selected_pts_mask, ~split_mask)
+        
+        # --- Prepare new parameters to append ---
+        
+        new_means_list = []
+        new_covs_list = []
+        new_quats_list = []
+        new_conf_list = []
+
+        # 1. Clone
+        if clone_mask.any():
+            new_means_list.append(self.means[clone_mask])
+            new_covs_list.append(self.log_covs[clone_mask])
+            new_quats_list.append(self.quats[clone_mask])
+            new_conf_list.append(self.confidence[clone_mask])
+
+        # 2. Split (Append new copies)
+        if split_mask.any():
+            # Sample new positions for the copy
+            stds = scales[split_mask]
+            means = self.means[split_mask]
+            samples = torch.randn_like(means) * stds
+            
+            # Rotate samples
+            quats = self.quats[split_mask]
+            quats = quats / quats.norm(dim=-1, keepdim=True)
+            R = self.quat_to_rotmat(quats)
+            # R is (N, 3, 3), samples is (N, 3)
+            rotated_samples = torch.bmm(R, samples.unsqueeze(-1)).squeeze(-1)
+            
+            new_means_split = means + rotated_samples
+            # Reduce scale by 1.6 (log variance -= 2*log(1.6))
+            new_covs_split = self.log_covs[split_mask] - 2 * np.log(1.6)
+            
+            new_means_list.append(new_means_split)
+            new_covs_list.append(new_covs_split)
+            new_quats_list.append(quats)
+            new_conf_list.append(self.confidence[split_mask])
+
+        if not new_means_list:
+            return
+
+        new_means_append = torch.cat(new_means_list, dim=0)
+        new_covs_append = torch.cat(new_covs_list, dim=0)
+        new_quats_append = torch.cat(new_quats_list, dim=0)
+        new_conf_append = torch.cat(new_conf_list, dim=0)
+
+        # --- Update Parameters ---
+
+        def param_fn(name: str, p: Tensor) -> Tensor:
+            if name == 'means':
+                new_param = nn.Parameter(torch.cat([p, new_means_append], dim=0), requires_grad=self.means.requires_grad)
+                if self.unfreeze_gausses:
+                    new_param.register_hook(self._grad_hook)
+                return new_param
+            elif name == 'log_covs':
+                # For split mask, we need to modify existing values in p
+                # Since we can't modify p in-place easily without affecting optimizer state logic if we replace it,
+                # we construct the new tensor with modified values.
+                
+                # Clone p to avoid modifying the original tensor in place before concatenation if needed
+                p_mod = p.clone()
+                if split_mask.any():
+                    p_mod[split_mask] -= 2 * np.log(1.6)
+                
+                new_param = nn.Parameter(torch.cat([p_mod, new_covs_append], dim=0), requires_grad=self.log_covs.requires_grad)
+                return new_param
+            elif name == 'quats':
+                new_param = nn.Parameter(torch.cat([p, new_quats_append], dim=0), requires_grad=self.quats.requires_grad)
+                return new_param
+            return p
+
+        def optimizer_fn(key: str, v: Tensor) -> Tensor:
+            # Append zeros for new parameters
+            # For existing parameters, we keep the state. 
+            # Note: For split, we modified the parameter value, but optimizer state (momentum) 
+            # usually should be kept or reset. Keeping it is standard for simple implementations.
+            zeros = torch.zeros((new_means_append.shape[0], *v.shape[1:]), device=self.device)
+            return torch.cat([v, zeros], dim=0)
+
+        self._update_param_with_optimizer(param_fn, optimizer_fn, self.gauss_params, optimizers)
+
+        self.confidence = torch.cat([self.confidence, new_conf_append], dim=0)
+        self.total_gaus = self.means.shape[0]
+        
+        # Resize accumulators
+        self.xyz_gradient_accum = torch.zeros(self.total_gaus, device=self.device)
+        self.denom = torch.zeros(self.total_gaus, device=self.device)
+        
+        self.feats = self.means_hash(self.means)
+        print(f"Densified to {self.total_gaus} gaussians (Cloned: {clone_mask.sum()}, Split: {split_mask.sum()})")
 
     def prune(self, optimizers: Dict[str, torch.optim.Optimizer], threshold: float=0.1):
         """
@@ -186,7 +338,10 @@ class SplashEncoding(nn.Module):
 
             mask = self.confidence >= threshold
             def param_fn(name: str, p: Tensor) -> Tensor:
-                return torch.nn.Parameter(p[mask], requires_grad=p.requires_grad)
+                new_param = torch.nn.Parameter(p[mask], requires_grad=p.requires_grad)
+                if name == 'means' and self.unfreeze_gausses:
+                    new_param.register_hook(self._grad_hook)
+                return new_param
 
             def optimizer_fn(key: str, v: Tensor) -> Tensor:
                 return v[mask]
@@ -196,6 +351,11 @@ class SplashEncoding(nn.Module):
             # Only keep entries where mask is True
             self.confidence = self.confidence[mask]
             self.total_gaus = self.means.shape[0]
+            
+            # Resize accumulators
+            self.xyz_gradient_accum = torch.zeros(self.total_gaus, device=self.device)
+            self.denom = torch.zeros(self.total_gaus, device=self.device)
+            
             self.feats = self.means_hash(self.means)
             
             # Refit KNN with new means
@@ -205,7 +365,7 @@ class SplashEncoding(nn.Module):
         """
         Reinitialize the means, feats, log_covs, and confidence with new random values, and refit KNN.
         """
-        self.gauss_params["means"] = nn.Parameter(self.init_mean(n_gausses), requires_grad=False)
+        self.gauss_params["means"] = nn.Parameter(self.init_mean(n_gausses))
         self.feats = self.means_hash(self.means)
         self.gauss_params["log_covs"] = nn.Parameter(torch.log(torch.ones(n_gausses, 3, device=self.device) * 0.0001), requires_grad=self.log_covs.requires_grad)
         quats = torch.zeros(n_gausses, 4, device=self.device)

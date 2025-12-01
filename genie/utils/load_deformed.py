@@ -18,7 +18,7 @@ def matrix_to_quaternion(M):
     
     return torch.tensor(q_wxyz, dtype=torch.float32, device=M.device)
 
-def load_deformed_tetrahedrons(model: GENIEModel, ply_path: str, ref_ply_path: str, scale: float = 0.1, scale_mesh: float = 1.0):
+def load_deformed_tetrahedrons(model: GENIEModel, old_quats: torch.Tensor, old_variances: torch.Tensor, ply_path: str, ref_ply_path: str, scale: float = 0.1, scale_mesh: float = 1.0):
     """
     Load deformed tetrahedrons from a PLY file and update the model's Gaussians using deformation gradient.
     
@@ -81,9 +81,6 @@ def load_deformed_tetrahedrons(model: GENIEModel, ply_path: str, ref_ply_path: s
     
     # Get current model covariance
     encoder = model.field.mlp_base.encoder
-    
-    old_variances = torch.exp(encoder.log_covs) # (N, 3)
-    old_quats = encoder.quats # (N, 4)
     
     # Construct rotation matrix
     R_old = encoder.quat_to_rotmat(old_quats) # (N, 3, 3)

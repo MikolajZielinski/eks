@@ -728,6 +728,7 @@ class DatasetRender(BaseRender):
     """Name of the renderer outputs to use. rgb, depth, raw-depth, gt-rgb etc. By default all outputs are rendered."""
     selected_camera_idx: Optional[int] = None
     """Index of the training camera to render. If None, renders all cameras."""
+    background_color: Optional[str] = "white"
 
     def main(self):
         config: TrainerConfig
@@ -830,9 +831,9 @@ class DatasetRender(BaseRender):
 
                     # Create background color context if specified
                     render_context = torch.no_grad()
-                    self.background_color = [1.0, 1.0, 1.0]
                     if self.background_color is not None:
-                        bg_color_tensor = torch.tensor(self.background_color, device=pipeline.device)
+                        bg_color = [1.0, 1.0, 1.0] if self.background_color == "white" else [0.0, 0.0, 0.0]
+                        bg_color_tensor = torch.tensor(bg_color, device=pipeline.device)
                         render_context = renderers.background_color_override_context(bg_color_tensor)
                     
                     with render_context:

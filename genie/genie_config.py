@@ -31,7 +31,7 @@ genie = MethodSpecification(
             target_num_samples = 1 << 18,
             datamanager=VanillaDataManagerConfig(
                 dataparser=GENIEBlenderDataParserConfig(
-                    alpha_color="white",
+                    alpha_color="black",
                 ),
                 pixel_sampler=PixelSamplerConfig(
                     rejection_sample_mask=False,
@@ -50,7 +50,7 @@ genie = MethodSpecification(
                 unfreeze_means=True,
                 near_plane=2.0,
                 far_plane=6.0,
-                background_color="white",
+                background_color="black",
                 disable_scene_contraction=True,
                 cone_angle=0.0,
                 # near_plane=0.0,

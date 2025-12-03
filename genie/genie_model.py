@@ -177,6 +177,15 @@ class GENIEModel(Model):
         # GradScaler
         self.grad_scaler = GradScaler(2**10)
 
+    def occ_eval_fn(self, x: torch.Tensor) -> torch.Tensor:
+        chunk_size = 128**3
+        density_list = []
+        for i in range(0, x.shape[0], chunk_size):
+            chunk_x = x[i : i + chunk_size]
+            density_list.append(self.field.density_fn(chunk_x))
+        
+        return torch.cat(density_list, dim=0) * self.config.render_step_size
+
     def get_training_callbacks(
         self, training_callback_attributes: TrainingCallbackAttributes
     ) -> List[TrainingCallback]:
@@ -184,7 +193,7 @@ class GENIEModel(Model):
         def update_occupancy_grid(step: int):
             self.occupancy_grid.update_every_n_steps(
             step=step,
-            occ_eval_fn=lambda x: self.field.density_fn(x) * self.config.render_step_size,
+            occ_eval_fn=self.occ_eval_fn,
             )
 
         def update_viewer(step: int):

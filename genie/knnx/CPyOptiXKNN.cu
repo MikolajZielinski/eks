@@ -451,7 +451,7 @@ __global__ void GenerateInstances(
 
 	int tid = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int wid = tid >> 5;
-	int number_of_warps = number_of_Gaussians >> 5;
+	int number_of_warps = (number_of_Gaussians - 1) >> 5;
 
 	// *********************************************************************************************
 

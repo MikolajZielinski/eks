@@ -78,7 +78,7 @@ def load_deformed_tetrahedrons(model: GENIEModel, old_quats: torch.Tensor, old_v
     # M_def = A @ M_ref  =>  A = M_def @ M_ref^-1
     M_ref_inv = torch.linalg.inv(M_ref)
     A = torch.matmul(M_def, M_ref_inv)
-    
+
     # Get current model covariance
     encoder = model.field.mlp_base.encoder
     
@@ -115,4 +115,4 @@ def load_deformed_tetrahedrons(model: GENIEModel, old_quats: torch.Tensor, old_v
     encoder.log_covs.data = new_log_covs
     encoder.quats.data = new_quats
     
-    print("Model updated with deformed tetrahedrons using deformation gradient.")
+    return A

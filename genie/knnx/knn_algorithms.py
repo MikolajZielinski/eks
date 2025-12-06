@@ -33,7 +33,7 @@ class BaseKNN:
         """Fit the KNN model to the given points."""
         raise NotImplementedError("This method should be implemented by subclasses.")
 
-    def get_nearest_neighbours(self, query: torch.Tensor, points: torch.Tensor):
+    def get_nearest_neighbours(self, query: torch.Tensor):
         """Get indices of nearest gaussians."""
         raise NotImplementedError("This method should be implemented by subclasses.")
     

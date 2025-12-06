@@ -176,14 +176,23 @@ class GENIEField(Field):
         return density, base_mlp_out
 
     def get_outputs(
-        self, ray_samples: RaySamples, density_embedding: Optional[Tensor] = None
+        self, ray_samples: RaySamples, density_embedding: Optional[Tensor] = None, direction_transform: Optional[torch.Tensor] = None
     ) -> Dict[FieldHeadNames, Tensor]:
         assert density_embedding is not None
         outputs = {}
         if ray_samples.camera_indices is None:
             raise AttributeError("Camera indices are not provided.")
         camera_indices = ray_samples.camera_indices.squeeze()
-        directions = get_normalized_directions(ray_samples.frustums.directions)
+
+        if direction_transform is not None:
+            directions = ray_samples.frustums.directions
+            rotated_dirs = torch.einsum("nij,ni->nj", direction_transform, directions)
+            directions = rotated_dirs
+        else:
+            directions = ray_samples.frustums.directions
+
+
+        directions = get_normalized_directions(directions)
         directions_flat = directions.view(-1, 3)
         d = self.direction_encoding(directions_flat)
 
@@ -229,3 +238,24 @@ class GENIEField(Field):
         outputs.update({FieldHeadNames.RGB: rgb})
 
         return outputs
+    
+    def forward(self, ray_samples: RaySamples, direction_transform: Optional[torch.Tensor] = None, compute_normals: bool = False) -> Dict[FieldHeadNames, Tensor]:
+        """Evaluates the field at points along the ray.
+
+        Args:
+            ray_samples: Samples to evaluate field on.
+        """
+        if compute_normals:
+            with torch.enable_grad():
+                density, density_embedding = self.get_density(ray_samples)
+        else:
+            density, density_embedding = self.get_density(ray_samples)
+
+        field_outputs = self.get_outputs(ray_samples, density_embedding=density_embedding, direction_transform=direction_transform)
+        field_outputs[FieldHeadNames.DENSITY] = density  # type: ignore
+
+        if compute_normals:
+            with torch.enable_grad():
+                normals = self.get_normals()
+            field_outputs[FieldHeadNames.NORMALS] = normals  # type: ignore
+        return field_outputs

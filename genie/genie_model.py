@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union, Callable, Any
+from collections import defaultdict
 
 import nerfacc
 import torch
@@ -14,10 +15,11 @@ from torch.nn import Parameter
 from torch.cuda.amp import GradScaler
 
 from nerfstudio.cameras.rays import RayBundle
+from nerfstudio.cameras.cameras import Cameras
+from nerfstudio.data.scene_box import OrientedBox
 from nerfstudio.engine.callbacks import TrainingCallback, TrainingCallbackAttributes, TrainingCallbackLocation
 from nerfstudio.field_components.field_heads import FieldHeadNames
 from nerfstudio.field_components.spatial_distortions import SceneContraction
-# from nerfstudio.model_components.losses import MSELoss, scale_gradients_by_distance_squared
 from nerfstudio.model_components.ray_samplers import VolumetricSampler
 from nerfstudio.model_components.renderers import AccumulationRenderer, DepthRenderer, RGBRenderer
 from nerfstudio.models.base_model import Model, ModelConfig
@@ -27,6 +29,7 @@ from genie.field.field import GENIEField
 from genie.knnx.knn_algorithms import BaseKNNConfig, BaseKNN
 from genie.utils.viewer_utils import ViewerPointCloud, ViewerOccupancyGrid, ViewerAABB
 from genie.utils.losses import distortion
+
 
 @dataclass
 class GENIEModelConfig(ModelConfig):
@@ -256,7 +259,7 @@ class GENIEModel(Model):
             
         return False
 
-    def get_outputs(self, ray_bundle: RayBundle):
+    def get_outputs(self, ray_bundle: RayBundle, direction_transform: torch.Tensor = None):
         assert self.field is not None
         num_rays = len(ray_bundle)
 
@@ -270,7 +273,16 @@ class GENIEModel(Model):
                 cone_angle=self.config.cone_angle,
             )
 
-        field_outputs = self.field(ray_samples)
+        if direction_transform is not None:
+            positions = self.field.get_sampling_positions(ray_samples)
+            indices, _ = self.field.mlp_base.encoder.knn.get_nearest_neighbours(positions)
+            indices = indices[:, 0]
+            closest_direction_transforms = direction_transform[indices]
+
+        else:
+            closest_direction_transforms = None
+
+        field_outputs = self.field(ray_samples, direction_transform=closest_direction_transforms)
 
         # accumulation
         packed_info = nerfacc.pack_info(ray_indices, num_rays)
@@ -311,6 +323,48 @@ class GENIEModel(Model):
             "num_samples_per_ray": packed_info[:, 1],
             "mip_loss": mip_loss,
         }
+        return outputs
+    
+    @torch.no_grad()
+    def get_outputs_for_camera(self, camera: Cameras, obb_box: Optional[OrientedBox] = None, direction_transform: torch.Tensor = None) -> Dict[str, torch.Tensor]:
+        """Takes in a camera, generates the raybundle, and computes the output of the model.
+        Assumes a ray-based model.
+
+        Args:
+            camera: generates raybundle
+        """
+        return self.get_outputs_for_camera_ray_bundle(
+            camera.generate_rays(camera_indices=0, keep_shape=True, obb_box=obb_box), direction_transform=direction_transform
+        )
+
+    @torch.no_grad()
+    def get_outputs_for_camera_ray_bundle(self, camera_ray_bundle: RayBundle, direction_transform: torch.Tensor = None) -> Dict[str, torch.Tensor]:
+        """Takes in camera parameters and computes the output of the model.
+
+        Args:
+            camera_ray_bundle: ray bundle to calculate outputs over
+        """
+        input_device = camera_ray_bundle.directions.device
+        num_rays_per_chunk = self.config.eval_num_rays_per_chunk
+        image_height, image_width = camera_ray_bundle.origins.shape[:2]
+        num_rays = len(camera_ray_bundle)
+        outputs_lists = defaultdict(list)
+        for i in range(0, num_rays, num_rays_per_chunk):
+            start_idx = i
+            end_idx = i + num_rays_per_chunk
+            ray_bundle = camera_ray_bundle.get_row_major_sliced_ray_bundle(start_idx, end_idx)
+            # move the chunk inputs to the model device
+            ray_bundle = ray_bundle.to(self.device)
+            outputs = self.forward(ray_bundle=ray_bundle, direction_transform=direction_transform)
+            for output_name, output in outputs.items():  # type: ignore
+                if not isinstance(output, torch.Tensor):
+                    # TODO: handle lists of tensors as well
+                    continue
+                # move the chunk outputs from the model device back to the device of the inputs.
+                outputs_lists[output_name].append(output.to(input_device))
+        outputs = {}
+        for output_name, outputs_list in outputs_lists.items():
+            outputs[output_name] = torch.cat(outputs_list).view(image_height, image_width, -1)  # type: ignore
         return outputs
 
     def get_metrics_dict(self, outputs, batch):
@@ -375,3 +429,16 @@ class GENIEModel(Model):
         }
 
         return metrics_dict, images_dict
+
+    def forward(self, ray_bundle: Union[RayBundle, Cameras], direction_transform: torch.Tensor = None) -> Dict[str, Union[torch.Tensor, List]]:
+        """Run forward starting with a ray bundle. This outputs different things depending on the configuration
+        of the model and whether or not the batch is provided (whether or not we are training basically)
+
+        Args:
+            ray_bundle: containing all the information needed to render that ray latents included
+        """
+
+        if self.collider is not None:
+            ray_bundle = self.collider(ray_bundle)
+
+        return self.get_outputs(ray_bundle, direction_transform=direction_transform)

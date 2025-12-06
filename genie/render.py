@@ -817,7 +817,7 @@ class DatasetRender(BaseRender):
                     # Load edited pointcloud
                     assert (self.load_config.parent / "camera_path").exists(), "Camera path directory does not exist"
                     ply_path = self.load_config.parent / f"camera_path/{camera_idx:05d}.ply"
-                    load_deformed_tetrahedrons(pipeline.model, old_quats, old_variances, str(ply_path), self.load_config.parent / "tetrahedron_soup.ply")
+                    direction_transform = load_deformed_tetrahedrons(pipeline.model, old_quats, old_variances, str(ply_path), self.load_config.parent / "tetrahedron_soup.ply")
 
                     # Update occupancy grid
                     pipeline.model.occupancy_grid.train()
@@ -837,7 +837,7 @@ class DatasetRender(BaseRender):
                         render_context = renderers.background_color_override_context(bg_color_tensor)
                     
                     with render_context:
-                        outputs = pipeline.model.get_outputs_for_camera(camera)
+                        outputs = pipeline.model.get_outputs_for_camera(camera, direction_transform=direction_transform)
                         if self.rendered_output_names is not None and "rgba" in self.rendered_output_names:
                             rgba = pipeline.model.get_rgba_image(outputs=outputs, output_name="rgb")
                             outputs["rgba"] = rgba

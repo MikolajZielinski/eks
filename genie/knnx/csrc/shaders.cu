@@ -1,4 +1,4 @@
-#include "Header.cuh"
+#include "common.cuh"
 
 // *** *** *** *** ***
 

@@ -2,24 +2,19 @@
 
 // *** *** *** *** ***
 
-#include "Header.cuh"
-
-#ifndef __CUDACC__
-	#include <torch/extension.h>
-	#include <utility>
-#endif
+#include "common.cuh"
+#include <string>
 
 // *** *** *** *** ***
 
 class CPyOptiXKNN {
 public:
-	CPyOptiXKNN(float chi_square_squared_radius);
+	CPyOptiXKNN(float chi_square_squared_radius, std::string ptx_path);
+    ~CPyOptiXKNN();
 
-	#ifndef __CUDACC__
-		void Fit(torch::Tensor &m, torch::Tensor &s, torch::Tensor &q);
+	void Fit(float* m, float* s, float* q, int number_of_Gaussians);
 
-		std::tuple<torch::Tensor, torch::Tensor> KNeighbors(torch::Tensor &queried_points, int K);
-	#endif
+	void KNeighbors(float* queried_points, int number_of_points, int K, int* indices, float* distances_squared);
 
 private:
 	OptixDeviceContext optixContext;
@@ -72,3 +67,10 @@ private:
 		int *indices, float *distances_squared
 	);
 };
+
+extern "C" {
+    void* CreateKNN(float chi_square_squared_radius, const char* ptx_path);
+    void DestroyKNN(void* knn_ptr);
+    void Fit(void* knn_ptr, float* m, float* s, float* q, int number_of_Gaussians);
+    void KNeighbors(void* knn_ptr, float* queried_points, int number_of_points, int K, int* indices, float* distances_squared);
+}

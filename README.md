@@ -24,8 +24,6 @@ Feel free to explore 🔍, clone the repo 📦, and start experimenting 🚀. Co
 
 # ⚙️ Installation
 ### Docker (preferred way)
-The easiest way to run our model is using the Docker container.
-First, install [OptiX SDK 8.1.0](https://developer.nvidia.com/designworks/optix/downloads/legacy) in `genie/genie/knn` directory. <br>
 Install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html). <br>
 Then simply run the command below, and everything will be set up for you automatically.
 ``` bash
@@ -48,16 +46,7 @@ This project is developed as an extension for Nerfstudio. To get started, please
     <!-- /pypi-strip -->
 </p>
 
-
-Install [OptiX SDK 8.1.0](https://developer.nvidia.com/designworks/optix/downloads/legacy) in `genie/genie/knn` directory.
-Then build the CUDA code by running:
-``` bash
-./build_optix.sh
-```
-> ⚠️ If the build fails, please double-check that the paths to the OptiX SDK and CUDA include directories are correct in build_optix.sh.
-We have tested with OptiX 7.6 and 8.1.0. OptiX 9.0 is not supported at the moment.
-
-Finally, install this repo with:
+Simply, install this repo with:
 ``` bash
 pip install -e .
 ns-install-cli

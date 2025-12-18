@@ -11,9 +11,11 @@
 
 // *** *** *** *** ***
 
+#include <string>
+
 class CPyOptiXKNN {
 public:
-	CPyOptiXKNN(float chi_square_squared_radius);
+	CPyOptiXKNN(float chi_square_squared_radius, std::string ptx_path);
 
 	#ifndef __CUDACC__
 		void Fit(torch::Tensor &m, torch::Tensor &s, torch::Tensor &q);

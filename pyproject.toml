@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools", "wheel", "torch"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "nerfstudio-genie"
 description = "Gaussian Splatting Encoded Neural Radiance Fields"

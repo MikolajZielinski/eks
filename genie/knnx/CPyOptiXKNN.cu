@@ -10,7 +10,7 @@
 
 // *** *** *** *** ***
 
-CPyOptiXKNN::CPyOptiXKNN(float chi_square_squared_radius) {
+CPyOptiXKNN::CPyOptiXKNN(float chi_square_squared_radius, std::string ptx_path) {
 	cudaError_t error_CUDA;
 	OptixResult error_OptiX;
 	CUresult error_CUDA_Driver_API;
@@ -55,7 +55,11 @@ CPyOptiXKNN::CPyOptiXKNN(float chi_square_squared_radius) {
 
 	// *********************************************************************************************
 
-	FILE *f = fopen("genie/knnx/build/shaders.ptx", "rb");
+	FILE *f = fopen(ptx_path.c_str(), "rb");
+	if (!f) {
+		fprintf(stderr, "Failed to open PTX file: %s\n", ptx_path.c_str());
+		throw std::runtime_error("Failed to open PTX file");
+	}
 	fseek(f, 0, SEEK_END);
 	int shadersSize = ftell(f);
 	fseek(f, 0, SEEK_SET);

@@ -3,6 +3,7 @@ from __future__ import annotations
 import torch
 import faiss
 import numpy as np
+import os
 
 from dataclasses import dataclass, field
 from nerfstudio.configs.base_config import InstantiateConfig
@@ -52,7 +53,15 @@ class OptixKNN(BaseKNN):
     def __init__(self, config: OptixKNNConfig):
         super().__init__(config)
 
-        self.knn = knnx.CPyOptiXKNN(config.chi_squared_radius)
+        # Find the PTX file relative to this file
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        ptx_path = os.path.join(current_dir, "shaders.ptx")
+        
+        if not os.path.exists(ptx_path):
+             # Fallback for development environment if not installed
+             ptx_path = os.path.join(current_dir, "build", "shaders.ptx")
+
+        self.knn = knnx.CPyOptiXKNN(config.chi_squared_radius, ptx_path)
 
     def fit(self, means: torch.Tensor, scales: torch.Tensor, quaternions: torch.Tensor):
         """

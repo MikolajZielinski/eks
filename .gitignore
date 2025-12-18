@@ -11,7 +11,6 @@ exports/
 blender/
 blender_neuraleditor/
 edits/
-build/
 eval/
 .env
 *.yml
@@ -22,5 +21,4 @@ NVIDIA-OptiX-SDK-*
 
 # CUDA
 *.o
-*.cu.ptx
 *.so

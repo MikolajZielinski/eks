@@ -9,8 +9,9 @@ PYBIND11_MODULE(knnx, m) {
 
 	pybind11::class_<CPyOptiXKNN>(m, "CPyOptiXKNN")
 		.def(
-			pybind11::init<float>(),
-			pybind11::arg("chi_square_squared_radius")
+			pybind11::init<float, std::string>(),
+			pybind11::arg("chi_square_squared_radius"),
+			pybind11::arg("ptx_path")
 		)
 		.def(
 			"Fit",

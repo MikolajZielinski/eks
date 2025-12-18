@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from nerfstudio.configs.base_config import InstantiateConfig
 from typing import Type
 
-from genie.knnx import knnx
+from genie.knnx.knnx_wrapper import OptiXKNN as CPyOptiXKNN
 
 
 @dataclass
@@ -52,16 +52,7 @@ class OptixKNN(BaseKNN):
 
     def __init__(self, config: OptixKNNConfig):
         super().__init__(config)
-
-        # Find the PTX file relative to this file
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        ptx_path = os.path.join(current_dir, "shaders.ptx")
-        
-        if not os.path.exists(ptx_path):
-             # Fallback for development environment if not installed
-             ptx_path = os.path.join(current_dir, "build", "shaders.ptx")
-
-        self.knn = knnx.CPyOptiXKNN(config.chi_squared_radius, ptx_path)
+        self.knn = CPyOptiXKNN(config.chi_squared_radius)
 
     def fit(self, means: torch.Tensor, scales: torch.Tensor, quaternions: torch.Tensor):
         """
@@ -74,7 +65,7 @@ class OptixKNN(BaseKNN):
         """
         assert means.is_cuda, "Means must be on CUDA"
 
-        self.knn.Fit(means, scales, quaternions)
+        self.knn.fit(means, scales, quaternions)
 
     def get_nearest_neighbours(self, query: torch.Tensor) -> torch.Tensor:
         """
@@ -96,7 +87,7 @@ class OptixKNN(BaseKNN):
         # distances = torch.empty((self.config.n_neighbours, self.pad_query.shape[0]), dtype=torch.float32, device='cuda')
         # indices = torch.empty((self.config.n_neighbours, self.pad_query.shape[0]), dtype=torch.int32, device='cuda')
 
-        indices, distances_squared = self.knn.KNeighbors(query, self.config.n_neighbours)
+        indices, distances_squared = self.knn.kneighbors(query, self.config.n_neighbours)
         distances = torch.sqrt(distances_squared)
 
         distances = distances.T

@@ -3,48 +3,51 @@
 
 // *** *** *** *** ***
 
-void CPyOptiXKNN::Fit(torch::Tensor &m, torch::Tensor &s, torch::Tensor &q) {
-	float3 *m_ptr = (float3 *)m.data_ptr();
-	float3 *s_ptr = (float3 *)s.data_ptr();
-	float4 *q_ptr = (float4 *)q.data_ptr();
+void CPyOptiXKNN::Fit(float* m, float* s, float* q, int number_of_Gaussians) {
+float3 *m_ptr = (float3 *)m;
+float3 *s_ptr = (float3 *)s;
+float4 *q_ptr = (float4 *)q;
 
-	c10::IntArrayRef sizes = m.sizes();
-
-	int number_of_Gaussians = sizes[0];
-
-	Fit_CUDA(
-		m_ptr, s_ptr, q_ptr,
-		number_of_Gaussians
-	);
+Fit_CUDA(
+m_ptr, s_ptr, q_ptr,
+number_of_Gaussians
+);
 }
 
 // *** *** *** *** ***
 
-std::tuple<torch::Tensor, torch::Tensor> CPyOptiXKNN::KNeighbors(torch::Tensor &queried_points, int K) {
-	c10::IntArrayRef sizes = queried_points.sizes();
+void CPyOptiXKNN::KNeighbors(float* queried_points, int number_of_points, int K, int* indices, float* distances_squared) {
+float3 *queried_points_ptr = (float3 *)queried_points;
 
-	int number_of_points = sizes[0];
+KNeighbors_CUDA(
+queried_points_ptr,
+number_of_points,
+K,
+indices, distances_squared
+);
+}
 
-	const int64_t size[] = {K, number_of_points};
-	torch::TensorOptions options;
+CPyOptiXKNN::~CPyOptiXKNN() {
+    // TODO: Add cleanup code here (cudaFree, optixDestroy, etc.)
+    // For now, we rely on OS cleanup or implement it later if needed for long-running processes
+}
 
-	options = torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA);
-	torch::Tensor indices = torch::empty(size, options);
+// *** C Interface Implementation ***
 
-	options = torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA);
-	torch::Tensor distances_squared = torch::empty(size, options);
+extern "C" {
+    void* CreateKNN(float chi_square_squared_radius, const char* ptx_path) {
+        return new CPyOptiXKNN(chi_square_squared_radius, std::string(ptx_path));
+    }
 
-	float3 *queried_points_ptr = (float3 *)queried_points.data_ptr();
+    void DestroyKNN(void* knn_ptr) {
+        delete (CPyOptiXKNN*)knn_ptr;
+    }
 
-	int *indices_ptr = (int *)indices.data_ptr();
-	float *distances_squared_ptr = (float *)distances_squared.data_ptr();
+    void Fit(void* knn_ptr, float* m, float* s, float* q, int number_of_Gaussians) {
+        ((CPyOptiXKNN*)knn_ptr)->Fit(m, s, q, number_of_Gaussians);
+    }
 
-	KNeighbors_CUDA(
-		queried_points_ptr,
-		number_of_points,
-		K,
-		indices_ptr, distances_squared_ptr
-	);
-
-	return std::make_tuple(indices, distances_squared);
+    void KNeighbors(void* knn_ptr, float* queried_points, int number_of_points, int K, int* indices, float* distances_squared) {
+        ((CPyOptiXKNN*)knn_ptr)->KNeighbors(queried_points, number_of_points, K, indices, distances_squared);
+    }
 }

@@ -9,6 +9,7 @@ renders/
 __pycache__/
 exports/
 blender/
+build/
 blender_neuraleditor/
 edits/
 eval/
@@ -20,5 +21,6 @@ eval/
 NVIDIA-OptiX-SDK-*
 
 # CUDA
-*.o
 *.so
+!knnx_core.so
+*.o

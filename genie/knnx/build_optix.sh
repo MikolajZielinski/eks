@@ -32,17 +32,7 @@ fi
 # OptiX SDK Path (Must be present on build machine)
 OPTIX_INCLUDE="NVIDIA-OptiX-SDK-9.0.0-linux64-x86_64/include"
 
-# Python / PyTorch Paths
-PYTHON_BIN=python3
-PYTORCH_DIR=$("$PYTHON_BIN" -c "import torch, os; print(os.path.join(torch.__path__[0], 'include'))")
-PYTORCH_API_DIR="$PYTORCH_DIR/torch/csrc/api/include"
-PYTHON_SITE_PACKAGES=$("$PYTHON_BIN" -c "import site; print(site.getsitepackages()[0])")
-TORCH_LIB_DIR="$PYTHON_SITE_PACKAGES/torch/lib"
-PYBIND11_INCLUDES=$("$PYTHON_BIN" -m pybind11 --includes)
-
-# ABI Flag
-TORCH_CXX11_ABI=$("$PYTHON_BIN" -c "import torch; print(int(torch._C._GLIBCXX_USE_CXX11_ABI))")
-ABI_FLAG="-D_GLIBCXX_USE_CXX11_ABI=${TORCH_CXX11_ABI}"
+# ABI Flag - Not strictly needed for pure C interface but good for C++ internals
 CXX_STD="-std=c++17"
 
 # === 2. Target Architectures (The "Blender Style" Part) ===
@@ -84,7 +74,7 @@ nvcc -Xcompiler -fPIC -c csrc/generate_instances.cu -o ${BUILD_DIR}/generate_ins
   ${CUDA_GENCODE} \
   -Iinclude \
   -I${CUDA_INCLUDE} \
-  ${ABI_FLAG} ${CXX_STD}
+  ${CXX_STD}
 
 echo "🔧 Compiling optix_knn_impl.cpp (as CUDA)..."
 nvcc -x cu -Xcompiler -fPIC -c csrc/optix_knn_impl.cpp -o ${BUILD_DIR}/optix_knn_impl.o \
@@ -93,47 +83,37 @@ nvcc -x cu -Xcompiler -fPIC -c csrc/optix_knn_impl.cpp -o ${BUILD_DIR}/optix_knn
   -I${CUDA_INCLUDE} \
   -I${OPTIX_INCLUDE} \
   -I${THRUST_INCLUDE} \
-  ${ABI_FLAG} ${CXX_STD}
+  ${CXX_STD}
 
-# === 5. Compile C++ Bindings ===
-echo "🔗 Compiling C++ bindings..."
+# === 5. Compile C++ Interface ===
+echo "🔗 Compiling C++ interface..."
 g++ $CXX_STD -fPIC -c csrc/optix_knn.cpp -o ${BUILD_DIR}/optix_knn.o \
   -Iinclude \
   -I${CUDA_INCLUDE} \
   -I${OPTIX_INCLUDE} \
-  -I${THRUST_INCLUDE} \
-  -I${PYTORCH_DIR} \
-  -I${PYTORCH_API_DIR} \
-  ${PYBIND11_INCLUDES} \
-  ${ABI_FLAG}
+  -I${THRUST_INCLUDE}
 
-# === 6. Link Shared Object ===
-echo "🔨 Linking knnx.so..."
-# Note: We link against libcuda but NOT cudart (static) usually, 
-# but here we rely on the system having the driver.
-g++ -shared -fPIC csrc/bindings.cpp \
-  ${BUILD_DIR}/generate_instances.cu.o \
-  ${BUILD_DIR}/optix_knn_impl.o \
-  ${BUILD_DIR}/optix_knn.o \
-  -o knnx.so \
-  -Iinclude \
-  -I${CUDA_INCLUDE} \
-  -I${OPTIX_INCLUDE} \
-  -I${THRUST_INCLUDE} \
-  -I${PYTORCH_DIR} \
-  -I${PYTORCH_API_DIR} \
-  -L${TORCH_LIB_DIR} \
-  -L${CUDA_LIB_DIR} \
-  ${PYBIND11_INCLUDES} \
-  ${ABI_FLAG} ${CXX_STD} \
-  -ltorch -ltorch_cpu -ltorch_python -lc10 -lcuda \
-  -Wl,-rpath,'$ORIGIN'
+# === 6. Link Shared Object (Portable Mode) ===
+echo "🔨 Linking knnx_core.so..."
+
+# Key changes:
+# 1. No -ltorch, -lc10, -lpython
+# 2. -cudart static (embeds the runtime so user doesn't need it)
+# 3. Link against libcuda (Driver API)
+
+nvcc -shared -o knnx_core.so \
+    ${BUILD_DIR}/generate_instances.cu.o \
+    ${BUILD_DIR}/optix_knn_impl.o \
+    ${BUILD_DIR}/optix_knn.o \
+    -arch=compute_75 \
+    -code=sm_75,sm_80,sm_86,sm_89,sm_90 \
+    -Xcompiler -fPIC \
+    -lcuda -lcudart_static -ldl -lpthread -lrt
 
 # === 7. Finalize ===
 echo "📦 Copying PTX to module directory..."
 cp ${BUILD_DIR}/shaders.ptx .
 
 echo "✅ Build complete!"
-echo "   - knnx.so (Multi-arch CUDA binary)"
+echo "   - knnx_core.so (Multi-arch CUDA binary)"
 echo "   - shaders.ptx (OptiX kernels)"
-echo "⚠️  NOTE: Users must have the same PyTorch version (major.minor) and CUDA driver installed."

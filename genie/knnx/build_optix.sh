@@ -95,12 +95,6 @@ g++ $CXX_STD -fPIC -c csrc/optix_knn.cpp -o ${BUILD_DIR}/optix_knn.o \
 
 # === 6. Link Shared Object (Portable Mode) ===
 echo "🔨 Linking knnx_core.so..."
-
-# Key changes:
-# 1. No -ltorch, -lc10, -lpython
-# 2. -cudart static (embeds the runtime so user doesn't need it)
-# 3. Link against libcuda (Driver API)
-
 nvcc -shared -o knnx_core.so \
     ${BUILD_DIR}/generate_instances.cu.o \
     ${BUILD_DIR}/optix_knn_impl.o \

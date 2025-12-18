@@ -1,5 +1,5 @@
 #include "constants.h"
-#include "CPyOptiXKNN.h"
+#include "optix_knn.h"
 
 // *** *** *** *** ***
 

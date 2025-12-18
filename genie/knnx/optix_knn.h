@@ -2,7 +2,7 @@
 
 // *** *** *** *** ***
 
-#include "Header.cuh"
+#include "common.cuh"
 
 #ifndef __CUDACC__
 	#include <torch/extension.h>

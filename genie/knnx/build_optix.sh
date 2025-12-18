@@ -48,17 +48,17 @@ OPTIX_INCLUDE="NVIDIA-OptiX-SDK-9.0.0-linux64-x86_64/include"
 PYTHON_BIN=python3
 
 # Safe fallback (no cpp_extension required)
-PYTORCH_DIR=$($PYTHON_BIN -c "import torch, os; print(os.path.join(torch.__path__[0], 'include'))")
+PYTORCH_DIR=$("$PYTHON_BIN" -c "import torch, os; print(os.path.join(torch.__path__[0], 'include'))")
 PYTORCH_API_DIR="$PYTORCH_DIR/torch/csrc/api/include"
 
-PYTHON_SITE_PACKAGES=$($PYTHON_BIN -c "import site; print(site.getsitepackages()[0])")
+PYTHON_SITE_PACKAGES=$("$PYTHON_BIN" -c "import site; print(site.getsitepackages()[0])")
 TORCH_LIB_DIR="$PYTHON_SITE_PACKAGES/torch/lib"
-PYBIND11_INCLUDES=$($PYTHON_BIN -m pybind11 --includes)
-PYTHON_EXT_SUFFIX=$($PYTHON_BIN-config --extension-suffix)
+PYBIND11_INCLUDES=$("$PYTHON_BIN" -m pybind11 --includes)
+PYTHON_EXT_SUFFIX=$("$PYTHON_BIN"-config --extension-suffix)
 
 # === Auto-detect ABI Flag ===
 echo "🔍 Detecting PyTorch ABI flag..."
-TORCH_CXX11_ABI=$($PYTHON_BIN -c "import torch; print(int(torch._C._GLIBCXX_USE_CXX11_ABI))")
+TORCH_CXX11_ABI=$("$PYTHON_BIN" -c "import torch; print(int(torch._C._GLIBCXX_USE_CXX11_ABI))")
 if [ "$TORCH_CXX11_ABI" = "1" ]; then
     ABI_FLAG="-D_GLIBCXX_USE_CXX11_ABI=1"
     echo "Detected ABI: CXX11 ABI enabled"
@@ -75,19 +75,32 @@ mkdir -p $BUILD_DIR
 # === 1. Compile OptiX Shader to PTX ===
 echo "📦 Compiling shaders.cu to PTX..."
 nvcc -ptx -std=c++17 \
-    -arch=sm_89 \
+    -arch=compute_89 \
     -I${OPTIX_INCLUDE} -I${CUDA_INCLUDE} -I${THRUST_INCLUDE} \
     -o ${BUILD_DIR}/shaders.ptx shaders.cu
 
 # === 2. Compile CUDA Source ===
-echo "🔧 Compiling KNN.cu..."
-nvcc -Xcompiler -fPIC -c CPyOptiXKNN.cu -o ${BUILD_DIR}/CPyOptiXKNN.cu.o \
-  --gpu-architecture=compute_89 --gpu-code=${CUDA_ARCH} \
-  -I${OPTIX_INCLUDE} -I${CUDA_INCLUDE} -I${THRUST_INCLUDE} ${ABI_FLAG} ${CXX_STD}
+echo "🔧 Compiling generate_instances.cu..."
+nvcc -Xcompiler -fPIC -c generate_instances.cu -o ${BUILD_DIR}/generate_instances.cu.o \
+  --gpu-architecture=compute_89 \
+  --gpu-code=${CUDA_ARCH} \
+  -I${CUDA_INCLUDE} \
+  ${ABI_FLAG}\
+  ${CXX_STD}
+
+echo "🔧 Compiling optix_knn_impl.cpp (as CUDA)..."
+nvcc -x cu -Xcompiler -fPIC -c optix_knn_impl.cpp -o ${BUILD_DIR}/optix_knn_impl.o \
+  --gpu-architecture=compute_89 \
+  --gpu-code=${CUDA_ARCH} \
+  -I${CUDA_INCLUDE} \
+  -I${OPTIX_INCLUDE} \
+  -I${THRUST_INCLUDE} \
+  ${ABI_FLAG} \
+  ${CXX_STD}
 
 # === 3. Compile and link shared Python extension ===
 echo "🔗 Compiling bindings to shared object..."
-g++ -std=c++17 -fPIC -c CPyOptiXKNN.cpp -o ${BUILD_DIR}/CPyOptiXKNN.o \
+g++ -std=c++17 -fPIC -c optix_knn.cpp -o ${BUILD_DIR}/optix_knn.o \
   ${CXX_STD} ${ABI_FLAG} ${PYBIND11_INCLUDES} \
   -I${CUDA_INCLUDE} \
   -I${OPTIX_INCLUDE} \
@@ -95,8 +108,7 @@ g++ -std=c++17 -fPIC -c CPyOptiXKNN.cpp -o ${BUILD_DIR}/CPyOptiXKNN.o \
   -I${PYTORCH_DIR} \
   -I${PYTORCH_API_DIR}
 
-
-g++ -shared -fPIC PyOptiXKNN.cpp ${BUILD_DIR}/CPyOptiXKNN.cu.o ${BUILD_DIR}/CPyOptiXKNN.o -o knnx.so \
+g++ -shared -fPIC bindings.cpp ${BUILD_DIR}/generate_instances.cu.o ${BUILD_DIR}/optix_knn_impl.o ${BUILD_DIR}/optix_knn.o -o knnx.so \
   ${CXX_STD} ${ABI_FLAG} ${PYBIND11_INCLUDES} \
   -I${CUDA_INCLUDE} \
   -I${OPTIX_INCLUDE} \
@@ -106,6 +118,9 @@ g++ -shared -fPIC PyOptiXKNN.cpp ${BUILD_DIR}/CPyOptiXKNN.cu.o ${BUILD_DIR}/CPyO
   -L${TORCH_LIB_DIR} \
   -L${CUDA_LIB_DIR} \
   -ltorch -ltorch_cpu -ltorch_python -lc10 -lcuda \
-  -Wl,-rpath=${TORCH_LIB_DIR}
+  -Wl,-rpath=${TORCH_LIB_DIR}:'$ORIGIN/../../torch/lib'
 
-echo "✅ Build complete. Output: build/optix_knn.so"
+echo "📦 Copying PTX to module directory..."
+cp ${BUILD_DIR}/shaders.ptx .
+
+echo "✅ Build complete. Output: knnx.so and shaders.ptx"

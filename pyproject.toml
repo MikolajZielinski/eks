@@ -23,3 +23,6 @@ genie = 'genie.genie_config:genie'
 # Note, add entrypoint name to nerfstudio/scripts/completions/install.py to include CLI completion
 genie-export = 'genie.exporter:entrypoint'
 genie-render = 'genie.render:entrypoint'
+
+[tool.setuptools.package-data]
+"genie.knnx" = ["*.so", "*.ptx"]

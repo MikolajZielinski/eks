@@ -1,4 +1,4 @@
-#include "CPyOptiXKNN.h"
+#include "optix_knn.h"
 
 // *** *** *** *** ***
 

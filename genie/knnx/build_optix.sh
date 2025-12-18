@@ -76,22 +76,27 @@ mkdir -p $BUILD_DIR
 echo "📦 Compiling shaders.cu to PTX..."
 nvcc -ptx -std=c++17 \
     -arch=compute_89 \
-    -I${OPTIX_INCLUDE} -I${CUDA_INCLUDE} -I${THRUST_INCLUDE} \
-    -o ${BUILD_DIR}/shaders.ptx shaders.cu
+    -Iinclude \
+    -I${OPTIX_INCLUDE} \
+    -I${CUDA_INCLUDE} \
+    -I${THRUST_INCLUDE} \
+    -o ${BUILD_DIR}/shaders.ptx csrc/shaders.cu
 
 # === 2. Compile CUDA Source ===
 echo "🔧 Compiling generate_instances.cu..."
-nvcc -Xcompiler -fPIC -c generate_instances.cu -o ${BUILD_DIR}/generate_instances.cu.o \
+nvcc -Xcompiler -fPIC -c csrc/generate_instances.cu -o ${BUILD_DIR}/generate_instances.cu.o \
   --gpu-architecture=compute_89 \
   --gpu-code=${CUDA_ARCH} \
+  -Iinclude \
   -I${CUDA_INCLUDE} \
   ${ABI_FLAG}\
   ${CXX_STD}
 
 echo "🔧 Compiling optix_knn_impl.cpp (as CUDA)..."
-nvcc -x cu -Xcompiler -fPIC -c optix_knn_impl.cpp -o ${BUILD_DIR}/optix_knn_impl.o \
+nvcc -x cu -Xcompiler -fPIC -c csrc/optix_knn_impl.cpp -o ${BUILD_DIR}/optix_knn_impl.o \
   --gpu-architecture=compute_89 \
   --gpu-code=${CUDA_ARCH} \
+  -Iinclude \
   -I${CUDA_INCLUDE} \
   -I${OPTIX_INCLUDE} \
   -I${THRUST_INCLUDE} \
@@ -100,16 +105,19 @@ nvcc -x cu -Xcompiler -fPIC -c optix_knn_impl.cpp -o ${BUILD_DIR}/optix_knn_impl
 
 # === 3. Compile and link shared Python extension ===
 echo "🔗 Compiling bindings to shared object..."
-g++ -std=c++17 -fPIC -c optix_knn.cpp -o ${BUILD_DIR}/optix_knn.o \
-  ${CXX_STD} ${ABI_FLAG} ${PYBIND11_INCLUDES} \
+g++ -std=c++17 -fPIC -c csrc/optix_knn.cpp -o ${BUILD_DIR}/optix_knn.o \
+  -Iinclude \
   -I${CUDA_INCLUDE} \
   -I${OPTIX_INCLUDE} \
   -I${THRUST_INCLUDE} \
   -I${PYTORCH_DIR} \
-  -I${PYTORCH_API_DIR}
+  -I${PYTORCH_API_DIR} \
+  ${PYBIND11_INCLUDES} \
+  ${ABI_FLAG} \
+  ${CXX_STD}
 
-g++ -shared -fPIC bindings.cpp ${BUILD_DIR}/generate_instances.cu.o ${BUILD_DIR}/optix_knn_impl.o ${BUILD_DIR}/optix_knn.o -o knnx.so \
-  ${CXX_STD} ${ABI_FLAG} ${PYBIND11_INCLUDES} \
+g++ -shared -fPIC csrc/bindings.cpp ${BUILD_DIR}/generate_instances.cu.o ${BUILD_DIR}/optix_knn_impl.o ${BUILD_DIR}/optix_knn.o -o knnx.so \
+  -Iinclude \
   -I${CUDA_INCLUDE} \
   -I${OPTIX_INCLUDE} \
   -I${THRUST_INCLUDE} \
@@ -117,6 +125,9 @@ g++ -shared -fPIC bindings.cpp ${BUILD_DIR}/generate_instances.cu.o ${BUILD_DIR}
   -I${PYTORCH_API_DIR} \
   -L${TORCH_LIB_DIR} \
   -L${CUDA_LIB_DIR} \
+  ${PYBIND11_INCLUDES} \
+  ${ABI_FLAG} \
+  ${CXX_STD} \
   -ltorch -ltorch_cpu -ltorch_python -lc10 -lcuda \
   -Wl,-rpath=${TORCH_LIB_DIR}:'$ORIGIN/../../torch/lib'
 

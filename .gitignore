@@ -24,3 +24,6 @@ NVIDIA-OptiX-SDK-*
 *.so
 !knnx_core.so
 *.o
+
+# 3D Model Files
+*.ply

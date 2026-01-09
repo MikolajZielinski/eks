@@ -18,7 +18,7 @@ def matrix_to_quaternion(M):
     
     return torch.tensor(q_wxyz, dtype=torch.float32, device=M.device)
 
-def load_deformed_tetrahedrons(model: GENIEModel, old_quats: torch.Tensor, old_variances: torch.Tensor, ply_path: str, ref_ply_path: str, scale: float = 0.1, scale_mesh: float = 1.0):
+def load_deformed_tetrahedrons(model: GENIEModel, ply_path: str, ref_ply_path: str, scale: float = 0.1, scale_mesh: float = 1.0):
     """
     Load deformed tetrahedrons from a PLY file and update the model's Gaussians using deformation gradient.
     
@@ -40,9 +40,8 @@ def load_deformed_tetrahedrons(model: GENIEModel, old_quats: torch.Tensor, old_v
     
     num_vertices = vertices.shape[0]
     num_gaussians = num_vertices // 4
-    print(f"Loading {num_gaussians} Gaussians.")
     
-    assert ref_vertices.shape[0] == num_vertices, "Reference and deformed meshes must have the same number of vertices"
+    assert ref_vertices.shape[0] == num_vertices, f"Reference and deformed meshes must have the same number of vertices. Reference {ref_vertices.shape[0]}, Deformed {num_vertices}"
 
     # The exporter stacks vertices as [v0, v1, v2, v3] for each Gaussian.
     # v0 is center, v1, v2, v3 are tips of the arms
@@ -73,46 +72,42 @@ def load_deformed_tetrahedrons(model: GENIEModel, old_quats: torch.Tensor, old_v
     means_def = torch.tensor(means_def_np, dtype=torch.float32, device=device)
     M_def = torch.tensor(M_def_np, dtype=torch.float32, device=device)
     M_ref = torch.tensor(M_ref_np, dtype=torch.float32, device=device)
-    
-    # Compute Deformation Gradient A
-    # M_def = A @ M_ref  =>  A = M_def @ M_ref^-1
-    M_ref_inv = torch.linalg.inv(M_ref)
-    A = torch.matmul(M_def, M_ref_inv)
 
     # Get current model covariance
     encoder = model.field.mlp_base.encoder
-    
-    # Construct rotation matrix
-    R_old = encoder.quat_to_rotmat(old_quats) # (N, 3, 3)
-    
-    # Construct full covariance matrix Sigma_old
-    # Sigma = R * diag(var) * R^T
-    Sigma_old = torch.matmul(R_old, torch.matmul(torch.diag_embed(old_variances), R_old.transpose(-2, -1)))
-    
-    # Update Covariance: Sigma_new = A * Sigma_old * A^T
-    Sigma_new = torch.matmul(A, torch.matmul(Sigma_old, A.transpose(-2, -1)))
-    
-    # Decompose Sigma_new to get new parameters
-    U, S, _ = torch.linalg.svd(Sigma_new)
-    
-    new_variances = S
-    new_R = U
-    
+
+    # Perform SVD on M_def to get new rotation and scales
+    U, S, Vh = torch.linalg.svd(M_def.double())
+    U = U.float()
+    S = S.float()
+
     # Ensure right-handed rotation
-    det = torch.linalg.det(new_R)
+    det = torch.linalg.det(U)
     mask = det < 0
     if mask.any():
-        new_R[mask, :, 2] *= -1
-        
-    new_quats = matrix_to_quaternion(new_R)
-    new_log_covs = torch.log(torch.clamp(new_variances, min=1e-6))
+        U[mask, :, 2] *= -1
+
+    new_quats = matrix_to_quaternion(U)
     
     # Update means
     new_means = means_def / scale_mesh
     
     # Update model parameters
     encoder.means.data = new_means
-    encoder.log_covs.data = new_log_covs
+    encoder.log_covs.data = torch.log(torch.square(torch.clamp(S / scale, min=1e-6)))
     encoder.quats.data = new_quats
-    
-    return A
+
+    # Compute direction transform (Deformed -> Reference)
+    M_ref_pinv = torch.linalg.pinv(M_ref.double())
+    A = torch.matmul(M_def.double(), M_ref_pinv)
+    U_dt, _, Vh_dt = torch.linalg.svd(A)
+    R_dt = torch.matmul(U_dt, Vh_dt)
+
+    # Enforce det = +1
+    det_dt = torch.linalg.det(R_dt)
+    mask_dt = det_dt < 0
+    if mask_dt.any():
+        U_dt[mask_dt, :, 2] *= -1
+    R_dt = torch.matmul(U_dt, Vh_dt)
+
+    return R_dt.float()

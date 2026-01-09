@@ -92,29 +92,32 @@ class GENIETrainer(Trainer):
                     with TimeWriter(writer, EventName.ITER_TRAIN_TIME, step=step) as train_t:
                         self.pipeline.train()
 
-                        # training callbacks before the training iteration
+                        start_time = time.perf_counter()
+
+                        # Training callbacks before the training iteration
                         for callback in self.callbacks:
                             callback.run_callback_at_location(
                                 step, location=TrainingCallbackLocation.BEFORE_TRAIN_ITERATION
                             )
 
-                        # time the forward pass and record duration to time.csv in the output dir
-                        start_time = time.perf_counter()
+                        # Forward and backward pass
                         loss, loss_dict, metrics_dict = self.train_iteration(step)
+
+                        # Training callbacks after the training iteration
+                        for callback in self.callbacks:
+                            callback.run_callback_at_location(
+                                step, location=TrainingCallbackLocation.AFTER_TRAIN_ITERATION
+                            )
+
                         iter_time = time.perf_counter() - start_time
                         self.total_time += iter_time
 
+                        # Append to metrics.csv file
                         if step % 100 == 0 or step == self.config.max_num_iterations - 1:
                             time_path = self.base_dir / "metrics.csv"
                             with time_path.open("a", newline="") as f:
                                 writer_csv = csv.writer(f)
                                 writer_csv.writerow([step, float(self.total_time), metrics_dict["psnr"].item()])
-
-                        # training callbacks after the training iteration
-                        for callback in self.callbacks:
-                            callback.run_callback_at_location(
-                                step, location=TrainingCallbackLocation.AFTER_TRAIN_ITERATION
-                            )
 
                 # Skip the first two steps to avoid skewed timings that break the viewer rendering speed estimate.
                 if step > 1:

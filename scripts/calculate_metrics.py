@@ -8,13 +8,12 @@ from pathlib import Path
 
 IMG_EXTS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
 
-def get_model_and_timestamp():
-    parser = argparse.ArgumentParser(description="Scale and center a mesh")
+def parse_args():
+    parser = argparse.ArgumentParser(description="Calculate metrics")
     parser.add_argument("--model-type", default='chair', dest="model_type")
     parser.add_argument("--timestamp", default='new_denisfy', dest="timestamp")
-    args = parser.parse_args()
-
-    return args.model_type, args.timestamp
+    parser.add_argument("--save-error-image", action='store_true', dest="save_error_image", help="Save error images")
+    return parser.parse_args()
 
 def load_image(path: Path):
     try:
@@ -70,10 +69,16 @@ def gather_images(folder: Path):
 
 def main():
 
-    model_type, timestamp = get_model_and_timestamp()
+    args = parse_args()
+    model_type = args.model_type
+    timestamp = args.timestamp
 
-    default_a = Path(f"renders/{model_type}/{timestamp}/test/rgb")
+    default_a = Path(f"renders/neuraleditor/{model_type}/{timestamp}/test/rgb")
     default_b = Path(f"blender_neuraleditor/{model_type}/views_test")
+
+    if args.save_error_image:
+        error_dir = default_a.parent / "error"
+        error_dir.mkdir(parents=True, exist_ok=True)
 
     a_files = gather_images(default_a)
     b_files = gather_images(default_b)
@@ -94,6 +99,12 @@ def main():
         if a_img.shape != b_img.shape:
             print(f"Skipping '{key}': size mismatch {a_img.shape} vs {b_img.shape}", file=sys.stderr)
             continue
+        
+        if args.save_error_image:
+            diff = np.abs(a_img.astype(np.float32) - b_img.astype(np.float32))
+            diff = np.clip(diff, 0, 255).astype(np.uint8)
+            Image.fromarray(diff).save(error_dir / f"{keys_a[key]}.png")
+
         value = psnr(a_img, b_img, data_range=None)
         psnr_values.append(value)
         valstr = "inf" if math.isinf(value) else f"{value:.3f}"

@@ -127,6 +127,9 @@ class ExportTetrahedronSoup():
             covs = torch.exp(model.field.mlp_base.encoder.log_covs)
             quats = model.field.mlp_base.encoder.quats
 
+            # Normalize quaternions to ensure valid rotation matrices
+            quats = quats / quats.norm(dim=-1, keepdim=True)
+
             CONSOLE.print(f"Exporting tetrahedron soup with {means.shape[0]} gaussians.")
 
             if covs.shape[1] == 2:
@@ -153,13 +156,8 @@ class ExportTetrahedronSoup():
             sigmas = torch.sqrt(covs)
             eigenvectors = R
 
-            idx = torch.argsort(sigmas, descending=True, dim=1)
-            batch_indices = torch.arange(eigenvectors.shape[0], device=eigenvectors.device).unsqueeze(-1).expand(-1, 3)
-            top3_vecs = eigenvectors[batch_indices, :, idx]
-            top3_sigmas = sigmas[batch_indices, idx]
-
             # Compute tetrahedrons
-            arms = top3_vecs * top3_sigmas.unsqueeze(1) * self.scale
+            arms = eigenvectors * sigmas.unsqueeze(1) * self.scale
             center_np = (means * self.scale_mesh).detach().cpu().numpy()
             arm1 = arms[:, :, 0].detach().cpu().numpy()
             arm2 = arms[:, :, 1].detach().cpu().numpy()
@@ -172,7 +170,6 @@ class ExportTetrahedronSoup():
 
             # Stack all vertices: (N, 4, 3) -> (N*4, 3)
             all_vertices = np.stack([v0, v1, v2, v3], axis=1).reshape(-1, 3)
-            
             num_gaussians = means.shape[0]
             base_indices = np.arange(num_gaussians) * 4
             

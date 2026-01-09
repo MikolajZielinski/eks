@@ -728,7 +728,7 @@ class DatasetRender(BaseRender):
     """Name of the renderer outputs to use. rgb, depth, raw-depth, gt-rgb etc. By default all outputs are rendered."""
     selected_camera_idx: Optional[int] = None
     """Index of the training camera to render. If None, renders all cameras."""
-    background_color: Optional[str] = "white"
+    background_color: Optional[str] = "black"
 
     def main(self):
         config: TrainerConfig
@@ -783,7 +783,6 @@ class DatasetRender(BaseRender):
                 device=datamanager.device,
                 num_workers=datamanager.world_size * 4,
             )
-            images_root = Path(os.path.commonpath(dataparser_outputs.image_filenames))
 
             selected_camera = None
             if self.selected_camera_idx is not None:
@@ -792,9 +791,6 @@ class DatasetRender(BaseRender):
                         selected_camera = camera
                         CONSOLE.print(f"Selected camera {camera_idx} for rendering")
                         break
-
-            old_variances = torch.exp(pipeline.model.field.mlp_base.encoder.log_covs).clone() # (N, 3)
-            old_quats = pipeline.model.field.mlp_base.encoder.quats.clone() # (N, 4)
 
             with Progress(
                 TextColumn(f":movie_camera: Rendering split {split} :movie_camera:"),
@@ -817,7 +813,7 @@ class DatasetRender(BaseRender):
                     # Load edited pointcloud
                     assert (self.load_config.parent / "camera_path").exists(), "Camera path directory does not exist"
                     ply_path = self.load_config.parent / f"camera_path/{camera_idx:05d}.ply"
-                    direction_transform = load_deformed_tetrahedrons(pipeline.model, old_quats, old_variances, str(ply_path), self.load_config.parent / "tetrahedron_soup.ply")
+                    direction_transform = load_deformed_tetrahedrons(pipeline.model, str(ply_path), self.load_config.parent / "tetrahedron_soup.ply")
 
                     # Update occupancy grid
                     pipeline.model.occupancy_grid.train()

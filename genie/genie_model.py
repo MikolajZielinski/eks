@@ -1,5 +1,5 @@
 """
-Implementation of GENIE.
+Implementation of Genie.
 """
 
 from __future__ import annotations
@@ -25,18 +25,18 @@ from nerfstudio.model_components.renderers import AccumulationRenderer, DepthRen
 from nerfstudio.models.base_model import Model, ModelConfig
 from nerfstudio.utils import colormaps
 
-from genie.field.field import GENIEField
+from genie.field.field import GenieField
 from genie.knnx.knn_algorithms import BaseKNNConfig, BaseKNN
-from genie.utils.viewer_utils import ViewerPointCloud, ViewerOccupancyGrid, ViewerAABB
+from genie.utils.viewer_utils import ViewerGaussianSplats, ViewerOccupancyGrid, ViewerAABB
 from genie.utils.losses import distortion
 
 
 @dataclass
-class GENIEModelConfig(ModelConfig):
-    """GENIE Model Config"""
+class GenieModelConfig(ModelConfig):
+    """Genie Model Config"""
 
     _target: Type = field(
-        default_factory=lambda: GENIEModel
+        default_factory=lambda: GenieModel
     )  # We can't write `NGPModel` directly, because `NGPModel` doesn't exist yet
     """target class to instantiate"""
     enable_collider: bool = False
@@ -45,22 +45,20 @@ class GENIEModelConfig(ModelConfig):
     """Instant NGP doesn't use a collider."""
     grid_resolution: Union[int, List[int]] = 128
     """Resolution of the grid used for the field."""
-    alpha_thre: float = 0.0
+    grid_levels: int = 4
+    """Levels of the grid used for the field."""
+    alpha_thre: float = 0.01
     """Threshold for opacity skipping."""
     cone_angle: float = 0.0
     """Should be set to 0.0 for blender scenes but 1./256 for real scenes."""
-    render_step_size: Optional[float] = 0.005
+    render_step_size: Optional[float] = None
     """Minimum step size for rendering."""
     near_plane: float = 0.0
     """How far along ray to start sampling."""
-    far_plane: float = 1e10
+    far_plane: float = 1e3
     """How far along ray to stop sampling."""
     use_gradient_scaling: bool = True
     """Use gradient scaler where the gradients are lower for points closer to the camera."""
-    use_appearance_embedding: bool = False
-    """Whether to use an appearance embedding."""
-    appearance_embedding_dim: int = 32
-    """Dimension of the appearance embedding."""
     background_color: Literal["random", "black", "white"] = "white"
     """
     The color that is given to masked areas.
@@ -78,19 +76,23 @@ class GENIEModelConfig(ModelConfig):
     """Whether to prune the model or not. If False, the model will not prune."""
     unfreeze_means: bool = True
     """Whether to unfreeze the means of the encoder or not."""
+    visualize_gaussians: bool = False
+    """Whether to visualize Gaussian splats in the viewer."""
+    visualize_occupancy_grid: bool = False
+    """Whether to visualize the occupancy grid in the viewer. This option slows down training."""
 
 
-class GENIEModel(Model):
-    """Instant NGP model
+class GenieModel(Model):
+    """Genie model
 
     Args:
-        config: instant NGP configuration to instantiate model
+        config: Genie configuration to instantiate model
     """
 
-    config: GENIEModelConfig
-    field: GENIEField
+    config: GenieModelConfig
+    field: GenieField
 
-    def __init__(self, config: GENIEModelConfig, **kwargs) -> None:
+    def __init__(self, config: GenieModelConfig, **kwargs) -> None:
         super().__init__(config=config, **kwargs)
 
     def populate_modules(self):
@@ -104,15 +106,12 @@ class GENIEModel(Model):
 
         # Get seed points
         seed_points = self.kwargs.get("seed_points", None)
-        if seed_points is not None:
-            seed_points = seed_points[0]
 
         # Initilize field
         self.knn_algorithm = self.config.knn_algorithm.setup()
-        self.field = GENIEField(
+        self.field = GenieField(
             knn_algorithm=self.knn_algorithm,
             aabb=self.scene_box.aabb,
-            appearance_embedding_dim=self.config.appearance_embedding_dim if self.config.use_appearance_embedding else 0,
             num_images=self.num_train_data,
             spatial_distortion=scene_contraction,
             seed_points=seed_points,
@@ -128,11 +127,10 @@ class GENIEModel(Model):
             self.config.render_step_size = ((self.scene_aabb[3:] - self.scene_aabb[:3]) ** 2).sum().sqrt().item() / 1000
 
         # Occupancy Grid.
-        roi_aabb = self.scene_aabb if self.config.disable_scene_contraction else self.scene_aabb * 2
         self.occupancy_grid = nerfacc.OccGridEstimator(
-            roi_aabb=roi_aabb, # self.scene_aabb,
+            roi_aabb=self.scene_aabb,
             resolution=self.config.grid_resolution,
-            levels=1,
+            levels=self.config.grid_levels,
         )
 
         # Sampler
@@ -159,19 +157,23 @@ class GENIEModel(Model):
         self.lpips = LearnedPerceptualImagePatchSimilarity(normalize=True)
 
         # Point Cloud Viewer
-        self.viewer_point_cloud_handle = ViewerPointCloud(
-            name="means", 
-            aabb=self.scene_box, 
-            points=self.field.mlp_base.encoder.gauss_params["means"].detach().cpu().numpy(),
-            confidence=self.field.mlp_base.encoder.confidence.detach().cpu().numpy(),
-            gradients=self.field.mlp_base.encoder.xyz_gradient_accum.detach().cpu().numpy(),
-            show_gradients=True,
-        )
-        self.viewer_occupancy_grid_handle = ViewerOccupancyGrid(
-            name="occupancy_grid",
-            aabb=self.scene_box,
-            occ_grid=self.occupancy_grid.binaries.bool().squeeze(0).detach().cpu(),
-        )
+        if self.config.visualize_gaussians:
+            self.viewer_gaussian_splats_handle = ViewerGaussianSplats(
+                name="gausses", 
+                aabb=self.scene_box, 
+                means=self.field.mlp_base.encoder.gauss_params["means"].detach().cpu().numpy(),
+                covariances=torch.exp(self.field.mlp_base.encoder.gauss_params["log_covs"]).detach().cpu().numpy(),
+                quats=self.field.mlp_base.encoder.gauss_params["quats"].detach().cpu().numpy(),
+                confidence=self.field.mlp_base.encoder.confidence.detach().cpu().numpy()
+            )
+        
+        if self.config.visualize_occupancy_grid:
+            self.viewer_occupancy_grid_handle = ViewerOccupancyGrid(
+                name="occupancy_grid",
+                aabb=self.scene_box,
+                occ_grid=self.occupancy_grid.binaries.bool().squeeze(0).detach().cpu(),
+            )
+
         self.viewer_aabb_handle = ViewerAABB(
             name="aabb",
             aabb=self.scene_box,
@@ -200,14 +202,18 @@ class GENIEModel(Model):
             )
 
         def update_viewer(step: int):
-            self.viewer_occupancy_grid_handle.update(
-                occ_grid=self.occupancy_grid.binaries.bool().squeeze(0).detach().cpu()
-            )
-            self.viewer_point_cloud_handle.update(
-                points=self.field.mlp_base.encoder.gauss_params["means"].detach().cpu().numpy(),
-                confidence=self.field.mlp_base.encoder.confidence.detach().cpu().numpy(),
-                gradients=self.field.mlp_base.encoder.xyz_gradient_accum.detach().cpu().numpy(),
-            )
+            if step % 16 == 0 and self.config.visualize_occupancy_grid:
+                self.viewer_occupancy_grid_handle.update(
+                    occ_grid=self.occupancy_grid.binaries.bool().squeeze(0).detach().cpu()
+                )
+                
+            if step % 10 == 0 and self.config.visualize_gaussians:
+                self.viewer_gaussian_splats_handle.update(
+                    means=self.field.mlp_base.encoder.gauss_params["means"].detach().cpu().numpy(),
+                    covariances=torch.exp(self.field.mlp_base.encoder.gauss_params["log_covs"]).detach().cpu().numpy(),
+                    quats=self.field.mlp_base.encoder.gauss_params["quats"].detach().cpu().numpy(),
+                    confidence=self.field.mlp_base.encoder.confidence.detach().cpu().numpy(),
+                )
 
         return [
             TrainingCallback(
@@ -294,8 +300,6 @@ class GENIEModel(Model):
         )
         weights = trans * alphas
         weights = weights[..., None]
-
-        # Removed densify_buffer collection logic here
 
         rgb = self.renderer_rgb(
             rgb=field_outputs[FieldHeadNames.RGB],

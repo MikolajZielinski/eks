@@ -22,7 +22,7 @@ from tqdm import tqdm
 from nerfstudio.utils.eval_utils import eval_setup
 from nerfstudio.utils.rich_utils import CONSOLE
 
-from genie.genie_model import GENIEModel
+from genie.genie_model import GenieModel
 
 
 @dataclass
@@ -45,7 +45,7 @@ class ExportTriangleSoup():
         _, pipeline, _, _ = eval_setup(self.load_config)
 
         model = pipeline.model
-        assert isinstance(model, GENIEModel), "Pipeline model must be GENIEModel for triangle soup export."
+        assert isinstance(model, GenieModel), "Pipeline model must be GenieModel for triangle soup export."
         
         with torch.no_grad():
             means = model.field.mlp_base.encoder.means
@@ -120,7 +120,7 @@ class ExportTetrahedronSoup():
         _, pipeline, _, _ = eval_setup(self.load_config)
 
         model = pipeline.model
-        assert isinstance(model, GENIEModel), "Pipeline model must be GENIEModel for triangle soup export."
+        assert isinstance(model, GenieModel), "Pipeline model must be GenieModel for triangle soup export."
         
         with torch.no_grad():
             means = model.field.mlp_base.encoder.means

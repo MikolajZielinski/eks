@@ -1,29 +1,16 @@
 import torch
 import numpy as np
 import open3d as o3d
-from genie.genie_model import GENIEModel
-from scipy.spatial.transform import Rotation as R_scipy
 
+from genie.genie_model import GenieModel
+from genie.utils.utils import rotmat_to_quat
 
-def matrix_to_quaternion(M):
-    # M: (B, 3, 3) torch tensor
-    M_np = M.detach().cpu().numpy()
-    
-    # Create rotation object
-    r = R_scipy.from_matrix(M_np)
-    
-    # Get quaternions (x, y, z, w) format in scipy
-    q_np = r.as_quat()
-    q_wxyz = np.stack([q_np[:, 3], q_np[:, 0], q_np[:, 1], q_np[:, 2]], axis=1)
-    
-    return torch.tensor(q_wxyz, dtype=torch.float32, device=M.device)
-
-def load_deformed_tetrahedrons(model: GENIEModel, ply_path: str, ref_ply_path: str, scale: float = 0.1, scale_mesh: float = 1.0):
+def load_deformed_tetrahedrons(model: GenieModel, ply_path: str, ref_ply_path: str, scale: float = 0.1, scale_mesh: float = 1.0):
     """
     Load deformed tetrahedrons from a PLY file and update the model's Gaussians using deformation gradient.
     
     Args:
-        model: The GENIEModel to update.
+        model: The GenieModel to update.
         ply_path: Path to the PLY file containing the deformed tetrahedron soup.
         ref_ply_path: Path to the PLY file containing the reference (undeformed) tetrahedron soup.
         scale: The scale factor used during export for the arms.
@@ -33,13 +20,16 @@ def load_deformed_tetrahedrons(model: GENIEModel, ply_path: str, ref_ply_path: s
     # Load the deformed mesh
     mesh = o3d.io.read_triangle_mesh(ply_path)
     vertices = np.asarray(mesh.vertices)
+    print(f"Loaded {vertices.shape[0] // 4} tetrahedrons from {ply_path}")
     
     # Load the reference mesh
     ref_mesh = o3d.io.read_triangle_mesh(ref_ply_path)
     ref_vertices = np.asarray(ref_mesh.vertices)
+    print(f"Loaded {ref_vertices.shape[0] // 4} tetrahedrons from {ref_ply_path}")
     
     num_vertices = vertices.shape[0]
     num_gaussians = num_vertices // 4
+    print(f"Loading {num_gaussians} Gaussians.")
     
     assert ref_vertices.shape[0] == num_vertices, f"Reference and deformed meshes must have the same number of vertices. Reference {ref_vertices.shape[0]}, Deformed {num_vertices}"
 
@@ -87,7 +77,7 @@ def load_deformed_tetrahedrons(model: GENIEModel, ply_path: str, ref_ply_path: s
     if mask.any():
         U[mask, :, 2] *= -1
 
-    new_quats = matrix_to_quaternion(U)
+    new_quats = rotmat_to_quat(U)
     
     # Update means
     new_means = means_def / scale_mesh

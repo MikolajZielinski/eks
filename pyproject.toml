@@ -21,6 +21,7 @@ include = ["genie*"]
 # register the entry point of your new method here:
 [project.entry-points.'nerfstudio.method_configs']
 genie = 'genie.genie_config:genie'
+genie-real = 'genie.genie_config:genie_real'
 
 [project.scripts]
 # Note, add entrypoint name to nerfstudio/scripts/completions/install.py to include CLI completion

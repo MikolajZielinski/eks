@@ -250,7 +250,7 @@ class MLPWithHashEncoding(FieldComponent):
             n_features_per_gauss=self.n_features_per_gauss, 
             n_gausses=40000,
             knn_algorithm=self.knn_algorithm,
-            means=self.seed_points,
+            gaussians=self.seed_points,
             densify=self.densify,
             prune=self.prune,
             unfreeze_means=self.unfreeze_means,

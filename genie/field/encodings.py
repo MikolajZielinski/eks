@@ -1,18 +1,18 @@
 """
 Encoding functions
 """
-
-from abc import abstractmethod
-from typing import Optional, Callable, Union, Dict, List
-
-import numpy as np
+import math
 import torch
+import numpy as np
+
 from torch import Tensor, nn
+from typing import Optional, Callable, Union, Dict, List
 
 from nerfstudio.field_components.encodings import HashEncoding
 from nerfstudio.field_components.spatial_distortions import SpatialDistortion
 
 from genie.knnx.knn_algorithms import BaseKNN
+from genie.utils.utils import quat_to_rotmat
 
 
 class SplashEncoding(nn.Module):
@@ -21,13 +21,12 @@ class SplashEncoding(nn.Module):
         n_gausses: int = 10000,
         n_features_per_gauss: int = 32,
         knn_algorithm: Optional[BaseKNN] = None,
-        means: Optional[Tensor] = None,
+        gaussians: Optional[Tensor] = None,
         densify: bool = True,
         prune: bool = True,
         unfreeze_means: bool = True,
         spatial_distortion: Optional[SpatialDistortion] = None,
-        device: str = 'cuda',
-        empty_as_hash: bool = False,
+        device: str = 'cuda'
     ):
         """
         """
@@ -39,29 +38,54 @@ class SplashEncoding(nn.Module):
         self.prune_gausses = prune
         self.unfreeze_gausses = unfreeze_means
         self.device = device
-        self.empty_as_hash = empty_as_hash
-        
+        self.spatial_distortion = spatial_distortion
+
+        means = gaussians["points3D_xyz"]
         if means is not None and isinstance(means, np.ndarray):
             means = torch.tensor(means, dtype=torch.float32, device=self.device)
         elif means is not None and isinstance(means, Tensor):
             means = means.to(device=self.device)
         else:
             means = self.init_mean(n_gausses)
+        self.total_gaus = means.shape[0]
 
-        if spatial_distortion is not None:
-            unifrom_means = self.init_mean_unifrom(1000000)
-            means = torch.cat([means, unifrom_means], dim=0)
+        scales_tensor = gaussians.get("points3D_scale", None)
+        if scales_tensor is None:
+            log_covs_tensor = nn.Parameter(torch.log(torch.ones(self.total_gaus, 3, device=self.device) * 0.0001))
+        else:
+            if isinstance(scales_tensor, np.ndarray):
+                scales_tensor = torch.tensor(scales_tensor, dtype=torch.float32, device=self.device)
+            else:
+                scales_tensor = scales_tensor.to(device=self.device)
 
-        self.hash_encoding = HashEncoding(max_res=8192, log2_hashmap_size=21)
+            log_covs_tensor = torch.log(torch.square(scales_tensor))
+
+        quats_tensor = gaussians.get("points3D_quat", None)
+        if quats_tensor is None:
+            quats_tensor = torch.zeros(self.total_gaus, 4, device=self.device)
+            quats_tensor[:, 0] = 1.0
+        else:
+            if isinstance(quats_tensor, np.ndarray):
+                quats_tensor = torch.tensor(quats_tensor, dtype=torch.float32, device=self.device)
+            else:
+                quats_tensor = quats_tensor.to(device=self.device)
+
+        if self.spatial_distortion is not None:
+            contracted_means = self.spatial_distortion(means)
+            self.contracted_means = (contracted_means + 2.0) / 4.0
+
+            # Scaling gausses x2
+            log_covs_tensor = log_covs_tensor + 2.0 * math.log(2.0)
+        else:
+            self.contracted_means = means
+
         self.means_hash = HashEncoding(max_res=8192, log2_hashmap_size=21)
 
         # Initialize Gaussians
-        self.total_gaus = means.shape[0]
         means = nn.Parameter(means)
-        self.register_buffer("feats", self.means_hash(means))
-        log_covs = nn.Parameter(torch.log(torch.ones(self.total_gaus, 3, device=self.device) * 0.0001))
-        quats = nn.Parameter(torch.zeros(self.total_gaus, 4, device=self.device))
-        quats.data[:, 0] = 1.0
+        self.register_buffer("feats", self.means_hash(self.contracted_means))
+        log_covs = nn.Parameter(log_covs_tensor)
+        quats = nn.Parameter(quats_tensor)
         self.confidence = torch.ones_like(means[:, 0], device=self.device, requires_grad=False)
         self.gauss_params = torch.nn.ParameterDict({
             "means": means,
@@ -263,7 +287,7 @@ class SplashEncoding(nn.Module):
             # Rotate samples
             quats = self.quats[split_mask]
             quats = quats / quats.norm(dim=-1, keepdim=True)
-            R = self.quat_to_rotmat(quats)
+            R = quat_to_rotmat(quats)
             # R is (N, 3, 3), samples is (N, 3)
             rotated_samples = torch.bmm(R, samples.unsqueeze(-1)).squeeze(-1)
             
@@ -350,13 +374,14 @@ class SplashEncoding(nn.Module):
 
             # Only keep entries where mask is True
             self.confidence = self.confidence[mask]
+            self.contracted_means = self.contracted_means[mask]
             self.total_gaus = self.means.shape[0]
             
             # Resize accumulators
             self.xyz_gradient_accum = torch.zeros(self.total_gaus, device=self.device)
             self.denom = torch.zeros(self.total_gaus, device=self.device)
             
-            self.feats = self.means_hash(self.means)
+            self.feats = self.means_hash(self.contracted_means)
             
             # Refit KNN with new means
             print(f"Pruned to {self.means.shape[0]} gaussians.")
@@ -397,35 +422,16 @@ class SplashEncoding(nn.Module):
     @property
     def quats(self) -> Tensor:
         return self.gauss_params["quats"]
-        
-    def quat_to_rotmat(self, quats):
-        w, x, y, z = quats.unbind(-1)
-        
-        xx = x * x
-        yy = y * y
-        zz = z * z
-        xy = x * y
-        xz = x * z
-        yz = y * z
-        wx = w * x
-        wy = w * y
-        wz = w * z
-        
-        row0 = torch.stack([1 - 2 * (yy + zz), 2 * (xy - wz), 2 * (xz + wy)], dim=-1)
-        row1 = torch.stack([2 * (xy + wz), 1 - 2 * (xx + zz), 2 * (yz - wx)], dim=-1)
-        row2 = torch.stack([2 * (xz - wy), 2 * (yz + wx), 1 - 2 * (xx + yy)], dim=-1)
-        
-        return torch.stack([row0, row1, row2], dim=-2)
 
     def interpolate(self, coords, nearest_gausses_indicies):
 
         if self.training:
-            self.feats = self.means_hash(self.means)
+            self.feats = self.means_hash(self.contracted_means)
         nearest_features = self.feats[nearest_gausses_indicies]
         nearest_covs = torch.exp(self.log_covs[nearest_gausses_indicies])
         nearest_quats = self.quats[nearest_gausses_indicies]
         nearest_quats = nearest_quats / nearest_quats.norm(dim=-1, keepdim=True)
-        R = self.quat_to_rotmat(nearest_quats)
+        R = quat_to_rotmat(nearest_quats)
 
         diff = coords[:, None, :] - self.means[nearest_gausses_indicies]
         diff_local = torch.matmul(R.transpose(-1, -2), diff.unsqueeze(-1)).squeeze(-1)
@@ -448,18 +454,11 @@ class SplashEncoding(nn.Module):
             max_idx = self.means.shape[0] - 1
             nearest_gausses_indicies = torch.clamp(nearest_gausses_indicies, min=0, max=max_idx)
 
-        slpash_feats = self.interpolate(coords, nearest_gausses_indicies)
-
-        if self.empty_as_hash:
-            hash_feats = self.hash_encoding(coords)
-            mask = (nearest_gausses_indicies > 0).all(dim=1)
-            feats = torch.where(mask.unsqueeze(-1), slpash_feats, hash_feats)
-        else:
-            feats = slpash_feats
+        splash_feats = self.interpolate(coords, nearest_gausses_indicies)
 
         if self.training:
             self.confidence -= 0.001
             self.confidence[nearest_gausses_indicies] += 0.01
             self.confidence.clamp_(min=0.0, max=1.0)
 
-        return feats
+        return splash_feats

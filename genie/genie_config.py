@@ -12,7 +12,7 @@ from nerfstudio.engine.optimizers import AdamOptimizerConfig
 from nerfstudio.plugins.types import MethodSpecification
 from nerfstudio.data.pixel_samplers import PixelSamplerConfig
 
-from genie.data.dataparsers import GENIEBlenderDataParserConfig#, GENIENerfstudioDataParserConfig
+from genie.data.dataparsers import GENIEBlenderDataParserConfig, GENIENerfstudioDataParserConfig
 from genie.genie_trainer import GENIETrainerConfig
 from genie.genie_model import GENIEModelConfig
 from genie.knnx.knn_algorithms import OptixKNNConfig
@@ -80,60 +80,60 @@ genie = MethodSpecification(
     description="Gaussian Splatting Encoded Neural Radiance Fields",
 )
 
-# genie_real = MethodSpecification(
-#     config=GENIETrainerConfig(
-#         method_name="genie-real",
-#         steps_per_eval_batch=500,
-#         steps_per_save=100,
-#         max_num_iterations=MAX_NUM_ITERATIONS,
-#         pipeline=GENIEPipelineConfig(
-#             target_num_samples = 1 << 18,
-#             datamanager=VanillaDataManagerConfig(
-#                 dataparser=GENIENerfstudioDataParserConfig(
-#                 ),
-#                 pixel_sampler=PixelSamplerConfig(
-#                     rejection_sample_mask=False,
-#                 ),
-#                 train_num_rays_per_batch=4096,
-#                 eval_num_rays_per_batch=4096,
-#             ),
-#             model=GENIEModelConfig(
-#                 knn_algorithm=OptixKNNConfig(
-#                     chi_squared_radius=120.0,
-#                     n_neighbours=16,
-#                 ),
-#                 eval_num_rays_per_chunk=8192,
-#                 grid_resolution=128,
-#                 densify=False,
-#                 prune=False,
-#                 unfreeze_means=False,
-#                 near_plane=0.05,
-#                 far_plane=1e3,
-#                 background_color="random",
-#                 disable_scene_contraction=False,
-#                 cone_angle=1.0 / 256.0,
-#                 ),
-#         ),
-#         optimizers={
-#             "fields": {
-#                 "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15, weight_decay=1e-06),
-#                 "scheduler": ChainedSchedulerConfig(max_steps=MAX_NUM_ITERATIONS),
-#             },
-#             "means": {
-#                 "optimizer": AdamOptimizerConfig(lr=1e-5, eps=1e-15),
-#                 "scheduler": ChainedSchedulerConfig(max_steps=MAX_NUM_ITERATIONS),
-#             },
-#             "log_covs": {
-#                 "optimizer": AdamOptimizerConfig(lr=1e-3, eps=1e-15),
-#                 "scheduler": ChainedSchedulerConfig(max_steps=MAX_NUM_ITERATIONS),
-#             },
-#             "quats": {
-#                 "optimizer": AdamOptimizerConfig(lr=1e-3, eps=1e-15),
-#                 "scheduler": ChainedSchedulerConfig(max_steps=MAX_NUM_ITERATIONS),
-#             },
-#         },
-#         viewer=ViewerConfig(num_rays_per_chunk=1 << 12),
-#         vis="viewer",
-#     ),
-#     description="Gaussian Splatting Encoded Neural Radiance Fields for Real Scenes",
-# )
+genie_real = MethodSpecification(
+    config=GENIETrainerConfig(
+        method_name="genie-real",
+        steps_per_eval_batch=500,
+        steps_per_save=100,
+        max_num_iterations=MAX_NUM_ITERATIONS,
+        pipeline=GENIEPipelineConfig(
+            target_num_samples = 1 << 18,
+            datamanager=VanillaDataManagerConfig(
+                dataparser=GENIENerfstudioDataParserConfig(
+                ),
+                pixel_sampler=PixelSamplerConfig(
+                    rejection_sample_mask=False,
+                ),
+                train_num_rays_per_batch=4096,
+                eval_num_rays_per_batch=4096,
+            ),
+            model=GENIEModelConfig(
+                knn_algorithm=OptixKNNConfig(
+                    chi_squared_radius=120.0,
+                    n_neighbours=16,
+                ),
+                eval_num_rays_per_chunk=8192,
+                grid_resolution=128,
+                densify=False,
+                prune=False,
+                unfreeze_means=False,
+                near_plane=0.05,
+                far_plane=1e3,
+                background_color="random",
+                disable_scene_contraction=False,
+                cone_angle=1.0 / 256.0,
+                ),
+        ),
+        optimizers={
+            "fields": {
+                "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15, weight_decay=1e-06),
+                "scheduler": ChainedSchedulerConfig(max_steps=MAX_NUM_ITERATIONS),
+            },
+            "means": {
+                "optimizer": AdamOptimizerConfig(lr=1e-5, eps=1e-15),
+                "scheduler": ChainedSchedulerConfig(max_steps=MAX_NUM_ITERATIONS),
+            },
+            "log_covs": {
+                "optimizer": AdamOptimizerConfig(lr=1e-3, eps=1e-15),
+                "scheduler": ChainedSchedulerConfig(max_steps=MAX_NUM_ITERATIONS),
+            },
+            "quats": {
+                "optimizer": AdamOptimizerConfig(lr=1e-3, eps=1e-15),
+                "scheduler": ChainedSchedulerConfig(max_steps=MAX_NUM_ITERATIONS),
+            },
+        },
+        viewer=ViewerConfig(num_rays_per_chunk=1 << 12),
+        vis="viewer",
+    ),
+    description="Gaussian Splatting Encoded Neural Radiance Fields for Real Scenes",
+)

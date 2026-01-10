@@ -1,13 +1,18 @@
 import torch
+import typing
+import torch.distributed as dist
 import torchvision.utils as vutils
 
 from pathlib import Path
 from time import time
 from dataclasses import dataclass, field
 from typing import Literal, Dict, Any, Optional, Type
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.cuda.amp.grad_scaler import GradScaler
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
 
+from nerfstudio.models.base_model import Model
+from nerfstudio.pipelines.base_pipeline import Pipeline
 from nerfstudio.pipelines.dynamic_batch import DynamicBatchPipelineConfig, DynamicBatchPipeline
 from nerfstudio.data.datamanagers.base_datamanager import VanillaDataManager
 from nerfstudio.utils import profiler
@@ -34,7 +39,39 @@ class GENIEPipeline(DynamicBatchPipeline):
         local_rank: int = 0,
         grad_scaler: Optional[GradScaler] = None,
     ):
-        super().__init__(config, device, test_mode, world_size, local_rank, grad_scaler)
+        # Initialize Pipeline (nn.Module)
+        Pipeline.__init__(self)
+        
+        self.config = config
+        self.test_mode = test_mode
+        self.datamanager: VanillaDataManager = config.datamanager.setup(
+            device=device, test_mode=test_mode, world_size=world_size, local_rank=local_rank
+        )
+
+        assert self.datamanager.train_dataset is not None, "Missing input dataset"
+
+        self._model = config.model.setup(
+            scene_box=self.datamanager.train_dataset.scene_box,
+            num_train_data=len(self.datamanager.train_dataset),
+            metadata=self.datamanager.train_dataset.metadata,
+            device=device,
+            grad_scaler=grad_scaler,
+            seed_points=self.datamanager.train_dataparser_outputs.metadata,
+        )
+        self.model.to(device)
+
+        self.world_size = world_size
+        if world_size > 1:
+            self._model = typing.cast(Model, DDP(self._model, device_ids=[local_rank], find_unused_parameters=True))
+            dist.barrier(device_ids=[local_rank])
+
+        # DynamicBatchPipeline initialization
+        assert isinstance(self.datamanager, VanillaDataManager), (
+            "DynamicBatchPipeline only works with VanillaDataManager."
+        )
+
+        self.dynamic_num_rays_per_batch = self.config.target_num_samples // self.config.max_num_samples_per_ray
+        self._update_pixel_samplers()
 
     def load_pipeline(self, loaded_state: Dict[str, Any], step: int) -> None:
         """Load the checkpoint from the given path

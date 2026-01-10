@@ -80,7 +80,7 @@ class GENIEModelConfig(ModelConfig):
     """Whether to prune the model or not. If False, the model will not prune."""
     unfreeze_means: bool = True
     """Whether to unfreeze the means of the encoder or not."""
-    debug_mode: bool = False
+    debug_mode: bool = True
     """Whether to enable debug mode or not. Enables additional viisualizations in the viewer."""
 
 
@@ -108,8 +108,6 @@ class GENIEModel(Model):
 
         # Get seed points
         seed_points = self.kwargs.get("seed_points", None)
-        if seed_points is not None:
-            seed_points = seed_points[0]
 
         # Initilize field
         self.knn_algorithm = self.config.knn_algorithm.setup()

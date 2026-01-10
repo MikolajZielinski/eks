@@ -138,27 +138,31 @@ class GENIEField(Field):
     def get_sampling_positions(self, ray_samples: RaySamples) -> Tensor:
         """Computes and returns the sampling positions."""
         if self.spatial_distortion is not None:
-            positions = ray_samples.frustums.get_positions()
+            uncontracted_positions = ray_samples.frustums.get_positions()
+            positions = self.spatial_distortion(uncontracted_positions)
+            positions = (positions + 2.0) / 4.0
         else:
             positions = SceneBox.get_normalized_positions(ray_samples.frustums.get_positions(), self.aabb)
-            # Make sure the tcnn gets inputs between 0 and 1.
-            selector = ((positions > 0.0) & (positions < 1.0)).all(dim=-1)
-            positions = positions * selector[..., None]
-            
-        return positions
+            uncontracted_positions = positions
+
+        # Make sure the tcnn gets inputs between 0 and 1.
+        selector = ((positions > 0.0) & (positions < 1.0)).all(dim=-1)
+        positions = positions * selector[..., None]
+
+        return positions, uncontracted_positions
 
     def get_density(self, ray_samples: RaySamples) -> Tuple[Tensor, Tensor]:
         """Computes and returns the densities."""
-        positions = self.get_sampling_positions(ray_samples)
+        positions, uncontracted_positions = self.get_sampling_positions(ray_samples)
         assert positions.numel() > 0, "positions is empty."
 
         self._sample_locations = positions
         if not self._sample_locations.requires_grad:
             self._sample_locations.requires_grad = True
-        positions_flat = positions.view(-1, 3)
+        uncontracted_positions_flat = uncontracted_positions.view(-1, 3)
 
-        assert positions_flat.numel() > 0, "positions_flat is empty."
-        h = self.mlp_base(positions_flat).view(*ray_samples.frustums.shape, -1)
+        assert uncontracted_positions_flat.numel() > 0, "uncontracted_positions_flat is empty."
+        h = self.mlp_base(uncontracted_positions_flat).view(*ray_samples.frustums.shape, -1)
         density_before_activation, base_mlp_out = torch.split(h, [1, self.geo_feat_dim], dim=-1)
         self._density_before_activation = density_before_activation
 

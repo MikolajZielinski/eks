@@ -1,22 +1,9 @@
 import torch
 import numpy as np
 import open3d as o3d
+
 from genie.genie_model import GENIEModel
-from scipy.spatial.transform import Rotation as R_scipy
-
-
-def matrix_to_quaternion(M):
-    # M: (B, 3, 3) torch tensor
-    M_np = M.detach().cpu().numpy()
-    
-    # Create rotation object
-    r = R_scipy.from_matrix(M_np)
-    
-    # Get quaternions (x, y, z, w) format in scipy
-    q_np = r.as_quat()
-    q_wxyz = np.stack([q_np[:, 3], q_np[:, 0], q_np[:, 1], q_np[:, 2]], axis=1)
-    
-    return torch.tensor(q_wxyz, dtype=torch.float32, device=M.device)
+from genie.utils.utils import rotmat_to_quat
 
 def load_deformed_tetrahedrons(model: GENIEModel, ply_path: str, ref_ply_path: str, scale: float = 0.1, scale_mesh: float = 1.0):
     """
@@ -90,7 +77,7 @@ def load_deformed_tetrahedrons(model: GENIEModel, ply_path: str, ref_ply_path: s
     if mask.any():
         U[mask, :, 2] *= -1
 
-    new_quats = matrix_to_quaternion(U)
+    new_quats = rotmat_to_quat(U)
     
     # Update means
     new_means = means_def / scale_mesh

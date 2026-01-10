@@ -9,58 +9,8 @@ from pathlib import Path
 from nerfstudio.data.dataparsers.blender_dataparser import BlenderDataParserConfig, Blender
 from nerfstudio.data.dataparsers.nerfstudio_dataparser import NerfstudioDataParserConfig, Nerfstudio
 
+from genie.utils.utils import rotmat_to_quat, quat_multiply, rotate_gaussians_x90
 
-def _quat_multiply(q1: torch.Tensor, q2: torch.Tensor) -> torch.Tensor:
-    """Hamilton product of quaternions in (w, x, y, z) order."""
-    w1, x1, y1, z1 = q1.unbind(-1)
-    w2, x2, y2, z2 = q2.unbind(-1)
-
-    return torch.stack(
-        [
-            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
-            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
-            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
-            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
-        ],
-        dim=-1,
-    )
-
-def _rotmat_to_quat(R: torch.Tensor) -> torch.Tensor:
-    """Convert 3x3 rotation matrix to (w,x,y,z) quaternion."""
-    t = R[..., 0, 0] + R[..., 1, 1] + R[..., 2, 2]
-    w = torch.sqrt(torch.clamp(t + 1.0, min=1e-12))
-    x = torch.sign(R[..., 2, 1] - R[..., 1, 2]) * torch.sqrt(torch.clamp(1 + R[..., 0, 0] - R[..., 1, 1] - R[..., 2, 2], min=1e-12)) * 0.5
-    y = torch.sign(R[..., 0, 2] - R[..., 2, 0]) * torch.sqrt(torch.clamp(1 - R[..., 0, 0] + R[..., 1, 1] - R[..., 2, 2], min=1e-12)) * 0.5
-    z = torch.sign(R[..., 1, 0] - R[..., 0, 1]) * torch.sqrt(torch.clamp(1 - R[..., 0, 0] - R[..., 1, 1] + R[..., 2, 2], min=1e-12)) * 0.5
-    quat = torch.stack([w, x, y, z], dim=-1)
-    return quat / quat.norm(dim=-1, keepdim=True).clamp_min(1e-12)
-
-def _rotate_gaussians_x90(points: torch.Tensor, quats: torch.Tensor | None = None):
-    """Rotate Gaussian means (and optional quats) by -90 deg about the x-axis."""
-    rot_xm90 = torch.tensor(
-        [
-            [1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0],
-            [0.0, -1.0, 0.0],
-        ],
-        dtype=points.dtype,
-        device=points.device,
-    )
-    rotated_points = points @ rot_xm90.T
-
-    rotated_quats = None
-    if quats is not None:
-        half_angle = math.sqrt(0.5)
-        # q for -90° about +x
-        q_rot = torch.tensor(
-            [half_angle, -half_angle, 0.0, 0.0],
-            dtype=quats.dtype,
-            device=quats.device,
-        )
-        rotated_quats = _quat_multiply(q_rot, quats)
-        rotated_quats = rotated_quats / rotated_quats.norm(dim=-1, keepdim=True).clamp_min(1e-12)
-
-    return rotated_points, rotated_quats
 
 @dataclass
 class GENIEBlenderDataParserConfig(BlenderDataParserConfig):
@@ -261,11 +211,11 @@ class GENIENerfstudio(Nerfstudio):
             )
             # Apply transform_matrix rotation to quats
             R_tf = torch.as_tensor(transform_matrix[:3, :3], dtype=points3D_quats.dtype, device=points3D_quats.device)
-            q_tf = _rotmat_to_quat(R_tf.expand(points3D_quats.shape[0], -1, -1))
-            points3D_quats = _quat_multiply(q_tf, points3D_quats)
+            q_tf = rotmat_to_quat(R_tf.expand(points3D_quats.shape[0], -1, -1))
+            points3D_quats = quat_multiply(q_tf, points3D_quats)
 
         # Rotate -90° about x to keep consistent with points
-        points3D, points3D_quats = _rotate_gaussians_x90(points3D, points3D_quats)
+        points3D, points3D_quats = rotate_gaussians_x90(points3D, points3D_quats)
 
         max_points = min(1000000, points3D.shape[0])
         rand_indices = np.random.permutation(points3D.shape[0])[:max_points]

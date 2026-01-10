@@ -43,7 +43,7 @@ from nerfstudio.utils.eval_utils import eval_setup
 from nerfstudio.utils.rich_utils import CONSOLE, ItersPerSecColumn
 from nerfstudio.utils.scripts import run_command
 
-from genie.genie_model import GENIEModel
+from genie.genie_model import GenieModel
 from genie.utils.load_deformed import load_deformed_tetrahedrons
 
 
@@ -756,7 +756,7 @@ class DatasetRender(BaseRender):
         )
 
         # Set occ grid enocoder to sample from the whole space for editing
-        assert isinstance(pipeline.model, GENIEModel), "DatasetRender only works with GENIEModel"
+        assert isinstance(pipeline.model, GenieModel), "DatasetRender only works with GenieModel"
 
         data_manager_config = config.pipeline.datamanager
         assert isinstance(data_manager_config, (VanillaDataManagerConfig, FullImageDatamanagerConfig))

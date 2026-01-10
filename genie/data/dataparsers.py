@@ -13,18 +13,18 @@ from genie.utils.utils import rotmat_to_quat, quat_multiply, rotate_gaussians_x9
 
 
 @dataclass
-class GENIEBlenderDataParserConfig(BlenderDataParserConfig):
-    """Configuration for GENIE Blender data parser."""
+class GenieBlenderDataParserConfig(BlenderDataParserConfig):
+    """Configuration for Genie Blender data parser."""
 
-    _target: Type = field(default_factory=lambda: GENIEBlender)
+    _target: Type = field(default_factory=lambda: GenieBlender)
 
-class GENIEBlender(Blender):
-    """GENIE Blender data parser.
+class GenieBlender(Blender):
+    """Genie Blender data parser.
 
-    This class extends the BlenderDataParser to handle GENIE-specific data parsing.
+    This class extends the BlenderDataParser to handle Genie-specific data parsing.
     """
 
-    def __init__(self, config: GENIEBlenderDataParserConfig):
+    def __init__(self, config: GenieBlenderDataParserConfig):
 
         config.ply_path ="sparse_pc.ply"
         super().__init__(config)
@@ -113,10 +113,10 @@ class GENIEBlender(Blender):
     
 
 @dataclass
-class GENIENerfstudioDataParserConfig(NerfstudioDataParserConfig):
-    """Configuration for GENIE Nerfstudio data parser."""
+class GenieNerfstudioDataParserConfig(NerfstudioDataParserConfig):
+    """Configuration for Genie Nerfstudio data parser."""
 
-    _target: Type = field(default_factory=lambda: GENIENerfstudio)
+    _target: Type = field(default_factory=lambda: GenieNerfstudio)
     """target class to instantiate"""
     downscale_factor: Optional[int] = None
     """How much to downscale images. If not set, images are chosen such that the max dimension is <1600px."""
@@ -124,13 +124,13 @@ class GENIENerfstudioDataParserConfig(NerfstudioDataParserConfig):
     """Whether to load the 3D points from the colmap reconstruction."""
 
 
-class GENIENerfstudio(Nerfstudio):
-    """GENIE Nerfstudio data parser.
+class GenieNerfstudio(Nerfstudio):
+    """Genie Nerfstudio data parser.
 
-    This class extends the NerfstudioDataParser to handle GENIE-specific data parsing.
+    This class extends the NerfstudioDataParser to handle Genie-specific data parsing.
     """
 
-    def __init__(self, config: GENIENerfstudioDataParserConfig):
+    def __init__(self, config: GenieNerfstudioDataParserConfig):
 
         config.ply_path ="sparse_pc.ply"
         super().__init__(config)
@@ -217,8 +217,7 @@ class GENIENerfstudio(Nerfstudio):
         # Rotate -90° about x to keep consistent with points
         points3D, points3D_quats = rotate_gaussians_x90(points3D, points3D_quats)
 
-        max_points = min(1000000, points3D.shape[0])
-        rand_indices = np.random.permutation(points3D.shape[0])[:max_points]
+        rand_indices = np.random.permutation(points3D.shape[0])
         rand_indices_t = torch.from_numpy(rand_indices).long()
 
         print(f"Loaded {points3D.shape[0]} 3D points from {ply_file_path}")

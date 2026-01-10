@@ -27,7 +27,7 @@ from genie.field.mlp import MLP, MLPWithHashEncoding
 from genie.knnx.knn_algorithms import BaseKNN
 
 
-class GENIEField(Field):
+class GenieField(Field):
     """Compound Field
 
     Args:
@@ -40,9 +40,6 @@ class GENIEField(Field):
         num_layers_color: number of hidden layers for color network
         n_features_per_gauss: number of features per Gaussian in the encoding
         hidden_dim_color: dimension of hidden layers for color network
-        appearance_embedding_dim: dimension of appearance embedding
-        use_pred_normals: whether to use predicted normals
-        use_average_appearance_embedding: whether to use average appearance embedding or zeros for inference
         spatial_distortion: spatial distortion to apply to the scene
         seed_points: seed points for the encoding
     """
@@ -60,9 +57,6 @@ class GENIEField(Field):
         num_layers_color: int = 3,
         n_features_per_gauss: int = 32,
         hidden_dim_color: int = 64,
-        appearance_embedding_dim: int = 32,
-        use_pred_normals: bool = False,
-        use_average_appearance_embedding: bool = False,
         spatial_distortion: Optional[SpatialDistortion] = None,
         implementation: Literal["tcnn", "torch"] = "tcnn",
         seed_points: Optional[Tensor] = None,
@@ -78,24 +72,13 @@ class GENIEField(Field):
         self.geo_feat_dim = geo_feat_dim
         self.spatial_distortion = spatial_distortion
         self.num_images = num_images
-        self.appearance_embedding_dim = appearance_embedding_dim
-        if self.appearance_embedding_dim > 0:
-            self.embedding_appearance = Embedding(self.num_images, self.appearance_embedding_dim)
-        else:
-            self.embedding_appearance = None
 
-        self.use_average_appearance_embedding = use_average_appearance_embedding
-        # self.use_pred_normals = use_pred_normals
         self.step = 0
 
         self.direction_encoding = SHEncoding(
             levels=4,
             implementation=implementation,
         )
-
-        # self.position_encoding = NeRFEncoding(
-        #     in_dim=3, num_frequencies=2, min_freq_exp=0, max_freq_exp=2 - 1, implementation=implementation
-        # )
 
         self.mlp_base = MLPWithHashEncoding(
             knn_algorithm=knn_algorithm,
@@ -112,21 +95,8 @@ class GENIEField(Field):
             spatial_distortion=self.spatial_distortion,
         )
 
-        # # predicted normals
-        # if self.use_pred_normals:
-        #     self.mlp_pred_normals = MLP(
-        #         in_dim=self.geo_feat_dim + self.position_encoding.get_out_dim(),
-        #         num_layers=3,
-        #         layer_width=64,
-        #         out_dim=hidden_dim_color,
-        #         activation=nn.ReLU(),
-        #         out_activation=None,
-        #         implementation=implementation,
-        #     )
-        #     self.field_head_pred_normals = PredNormalsFieldHead(in_dim=self.mlp_pred_normals.get_out_dim())
-
         self.mlp_head = MLP(
-            in_dim=self.direction_encoding.get_out_dim() + self.geo_feat_dim + self.appearance_embedding_dim,
+            in_dim=self.direction_encoding.get_out_dim() + self.geo_feat_dim,
             num_layers=num_layers_color,
             layer_width=hidden_dim_color,
             out_dim=3,
@@ -181,7 +151,6 @@ class GENIEField(Field):
         outputs = {}
         if ray_samples.camera_indices is None:
             raise AttributeError("Camera indices are not provided.")
-        camera_indices = ray_samples.camera_indices.squeeze()
 
         if direction_transform is not None:
             directions = ray_samples.frustums.directions
@@ -197,40 +166,11 @@ class GENIEField(Field):
 
         outputs_shape = ray_samples.frustums.directions.shape[:-1]
 
-        # appearance
-        if self.embedding_appearance is not None:
-            if self.training:
-                embedded_appearance = self.embedding_appearance(camera_indices)
-            else:
-                if self.use_average_appearance_embedding:
-                    embedded_appearance = torch.ones(
-                        (*directions.shape[:-1], self.appearance_embedding_dim), device=directions.device
-                    ) * self.embedding_appearance.mean(dim=0)
-                else:
-                    embedded_appearance = torch.zeros(
-                        (*directions.shape[:-1], self.appearance_embedding_dim), device=directions.device
-                    )
-        else:
-            embedded_appearance = None
-
-        # # predicted normals
-        # if self.use_pred_normals:
-        #     positions = ray_samples.frustums.get_positions()
-
-        #     positions_flat = self.position_encoding(positions.view(-1, 3))
-        #     pred_normals_inp = torch.cat([positions_flat, density_embedding.view(-1, self.geo_feat_dim)], dim=-1)
-
-        #     x = self.mlp_pred_normals(pred_normals_inp).view(*outputs_shape, -1).to(directions)
-        #     outputs[FieldHeadNames.PRED_NORMALS] = self.field_head_pred_normals(x)
-
         h = torch.cat(
             [
                 d,
                 density_embedding.view(-1, self.geo_feat_dim),
-            ]
-            + (
-                [embedded_appearance.view(-1, self.appearance_embedding_dim)] if embedded_appearance is not None else []
-            ),
+            ],
             dim=-1,
         )
         rgb = self.mlp_head(h).view(*outputs_shape, -1).to(directions)

@@ -12,25 +12,25 @@ from nerfstudio.engine.optimizers import AdamOptimizerConfig
 from nerfstudio.plugins.types import MethodSpecification
 from nerfstudio.data.pixel_samplers import PixelSamplerConfig
 
-from genie.data.dataparsers import GENIEBlenderDataParserConfig, GENIENerfstudioDataParserConfig
-from genie.genie_trainer import GENIETrainerConfig
-from genie.genie_model import GENIEModelConfig
+from genie.data.dataparsers import GenieBlenderDataParserConfig, GenieNerfstudioDataParserConfig
+from genie.genie_trainer import GenieTrainerConfig
+from genie.genie_model import GenieModelConfig
 from genie.knnx.knn_algorithms import OptixKNNConfig
 from genie.utils.schedulers import ChainedSchedulerConfig
-from genie.genie_pipeline import GENIEPipelineConfig
+from genie.genie_pipeline import GeniePipelineConfig
 
 MAX_NUM_ITERATIONS = 30000
 
 genie = MethodSpecification(
-    config=GENIETrainerConfig(
+    config=GenieTrainerConfig(
         method_name="genie",
         steps_per_eval_batch=500,
         steps_per_save=100,
         max_num_iterations=MAX_NUM_ITERATIONS,
-        pipeline=GENIEPipelineConfig(
+        pipeline=GeniePipelineConfig(
             target_num_samples = 1 << 18,
             datamanager=VanillaDataManagerConfig(
-                dataparser=GENIEBlenderDataParserConfig(
+                dataparser=GenieBlenderDataParserConfig(
                     alpha_color="white",
                 ),
                 pixel_sampler=PixelSamplerConfig(
@@ -39,7 +39,7 @@ genie = MethodSpecification(
                 train_num_rays_per_batch=4096,
                 eval_num_rays_per_batch=4096,
             ),
-            model=GENIEModelConfig(
+            model=GenieModelConfig(
                 knn_algorithm=OptixKNNConfig(
                     chi_squared_radius=2.0,
                     n_neighbours=16,
@@ -81,15 +81,15 @@ genie = MethodSpecification(
 )
 
 genie_real = MethodSpecification(
-    config=GENIETrainerConfig(
+    config=GenieTrainerConfig(
         method_name="genie-real",
         steps_per_eval_batch=500,
         steps_per_save=100,
         max_num_iterations=MAX_NUM_ITERATIONS,
-        pipeline=GENIEPipelineConfig(
-            target_num_samples = 1 << 18,
+        pipeline=GeniePipelineConfig(
+            target_num_samples = 1 << 17,
             datamanager=VanillaDataManagerConfig(
-                dataparser=GENIENerfstudioDataParserConfig(
+                dataparser=GenieNerfstudioDataParserConfig(
                 ),
                 pixel_sampler=PixelSamplerConfig(
                     rejection_sample_mask=False,
@@ -97,7 +97,7 @@ genie_real = MethodSpecification(
                 train_num_rays_per_batch=4096,
                 eval_num_rays_per_batch=4096,
             ),
-            model=GENIEModelConfig(
+            model=GenieModelConfig(
                 knn_algorithm=OptixKNNConfig(
                     chi_squared_radius=120.0,
                     n_neighbours=16,

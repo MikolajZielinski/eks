@@ -2,15 +2,15 @@ import torch
 import numpy as np
 import open3d as o3d
 
-from genie.genie_model import GENIEModel
+from genie.genie_model import GenieModel
 from genie.utils.utils import rotmat_to_quat
 
-def load_deformed_tetrahedrons(model: GENIEModel, ply_path: str, ref_ply_path: str, scale: float = 0.1, scale_mesh: float = 1.0):
+def load_deformed_tetrahedrons(model: GenieModel, ply_path: str, ref_ply_path: str, scale: float = 0.1, scale_mesh: float = 1.0):
     """
     Load deformed tetrahedrons from a PLY file and update the model's Gaussians using deformation gradient.
     
     Args:
-        model: The GENIEModel to update.
+        model: The GenieModel to update.
         ply_path: Path to the PLY file containing the deformed tetrahedron soup.
         ref_ply_path: Path to the PLY file containing the reference (undeformed) tetrahedron soup.
         scale: The scale factor used during export for the arms.

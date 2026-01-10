@@ -97,10 +97,6 @@ class GENIEField(Field):
         #     in_dim=3, num_frequencies=2, min_freq_exp=0, max_freq_exp=2 - 1, implementation=implementation
         # )
 
-        if self.spatial_distortion is not None:
-            seed_points = self.spatial_distortion(seed_points)
-            seed_points = (seed_points + 2.0) / 4.0
-
         self.mlp_base = MLPWithHashEncoding(
             knn_algorithm=knn_algorithm,
             n_features_per_gauss=n_features_per_gauss,
@@ -143,13 +139,12 @@ class GENIEField(Field):
         """Computes and returns the sampling positions."""
         if self.spatial_distortion is not None:
             positions = ray_samples.frustums.get_positions()
-            positions = self.spatial_distortion(positions)
-            positions = (positions + 2.0) / 4.0
         else:
             positions = SceneBox.get_normalized_positions(ray_samples.frustums.get_positions(), self.aabb)
-        # Make sure the tcnn gets inputs between 0 and 1.
-        selector = ((positions > 0.0) & (positions < 1.0)).all(dim=-1)
-        positions = positions * selector[..., None]
+            # Make sure the tcnn gets inputs between 0 and 1.
+            selector = ((positions > 0.0) & (positions < 1.0)).all(dim=-1)
+            positions = positions * selector[..., None]
+            
         return positions
 
     def get_density(self, ray_samples: RaySamples) -> Tuple[Tensor, Tensor]:

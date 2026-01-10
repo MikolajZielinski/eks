@@ -27,7 +27,7 @@ from nerfstudio.utils import colormaps
 
 from genie.field.field import GENIEField
 from genie.knnx.knn_algorithms import BaseKNNConfig, BaseKNN
-from genie.utils.viewer_utils import ViewerPointCloud, ViewerOccupancyGrid, ViewerAABB
+from genie.utils.viewer_utils import ViewerGaussianSplats, ViewerOccupancyGrid, ViewerAABB
 from genie.utils.losses import distortion
 
 
@@ -45,15 +45,17 @@ class GENIEModelConfig(ModelConfig):
     """Instant NGP doesn't use a collider."""
     grid_resolution: Union[int, List[int]] = 128
     """Resolution of the grid used for the field."""
-    alpha_thre: float = 0.0
+    grid_levels: int = 4
+    """Levels of the grid used for the field."""
+    alpha_thre: float = 0.01
     """Threshold for opacity skipping."""
     cone_angle: float = 0.0
     """Should be set to 0.0 for blender scenes but 1./256 for real scenes."""
-    render_step_size: Optional[float] = 0.005
+    render_step_size: Optional[float] = None
     """Minimum step size for rendering."""
     near_plane: float = 0.0
     """How far along ray to start sampling."""
-    far_plane: float = 1e10
+    far_plane: float = 1e3
     """How far along ray to stop sampling."""
     use_gradient_scaling: bool = True
     """Use gradient scaler where the gradients are lower for points closer to the camera."""
@@ -78,6 +80,8 @@ class GENIEModelConfig(ModelConfig):
     """Whether to prune the model or not. If False, the model will not prune."""
     unfreeze_means: bool = True
     """Whether to unfreeze the means of the encoder or not."""
+    debug_mode: bool = False
+    """Whether to enable debug mode or not. Enables additional viisualizations in the viewer."""
 
 
 class GENIEModel(Model):
@@ -128,11 +132,10 @@ class GENIEModel(Model):
             self.config.render_step_size = ((self.scene_aabb[3:] - self.scene_aabb[:3]) ** 2).sum().sqrt().item() / 1000
 
         # Occupancy Grid.
-        roi_aabb = self.scene_aabb if self.config.disable_scene_contraction else self.scene_aabb * 2
         self.occupancy_grid = nerfacc.OccGridEstimator(
-            roi_aabb=roi_aabb, # self.scene_aabb,
+            roi_aabb=self.scene_aabb,
             resolution=self.config.grid_resolution,
-            levels=1,
+            levels=self.config.grid_levels,
         )
 
         # Sampler
@@ -159,23 +162,24 @@ class GENIEModel(Model):
         self.lpips = LearnedPerceptualImagePatchSimilarity(normalize=True)
 
         # Point Cloud Viewer
-        self.viewer_point_cloud_handle = ViewerPointCloud(
-            name="means", 
-            aabb=self.scene_box, 
-            points=self.field.mlp_base.encoder.gauss_params["means"].detach().cpu().numpy(),
-            confidence=self.field.mlp_base.encoder.confidence.detach().cpu().numpy(),
-            gradients=self.field.mlp_base.encoder.xyz_gradient_accum.detach().cpu().numpy(),
-            show_gradients=True,
-        )
-        self.viewer_occupancy_grid_handle = ViewerOccupancyGrid(
-            name="occupancy_grid",
-            aabb=self.scene_box,
-            occ_grid=self.occupancy_grid.binaries.bool().squeeze(0).detach().cpu(),
-        )
-        self.viewer_aabb_handle = ViewerAABB(
-            name="aabb",
-            aabb=self.scene_box,
-        )
+        if self.config.debug_mode:
+            self.viewer_gaussian_splats_handle = ViewerGaussianSplats(
+                name="gausses", 
+                aabb=self.scene_box, 
+                means=self.field.mlp_base.encoder.gauss_params["means"].detach().cpu().numpy(),
+                covariances=torch.exp(self.field.mlp_base.encoder.gauss_params["log_covs"]).detach().cpu().numpy(),
+                quats=self.field.mlp_base.encoder.gauss_params["quats"].detach().cpu().numpy(),
+                confidence=self.field.mlp_base.encoder.confidence.detach().cpu().numpy()
+            )
+            self.viewer_occupancy_grid_handle = ViewerOccupancyGrid(
+                name="occupancy_grid",
+                aabb=self.scene_box,
+                occ_grid=self.occupancy_grid.binaries.bool().squeeze(0).detach().cpu(),
+            )
+            self.viewer_aabb_handle = ViewerAABB(
+                name="aabb",
+                aabb=self.scene_box,
+            )
 
         # GradScaler
         self.grad_scaler = GradScaler(2**10)
@@ -200,14 +204,18 @@ class GENIEModel(Model):
             )
 
         def update_viewer(step: int):
-            self.viewer_occupancy_grid_handle.update(
-                occ_grid=self.occupancy_grid.binaries.bool().squeeze(0).detach().cpu()
-            )
-            self.viewer_point_cloud_handle.update(
-                points=self.field.mlp_base.encoder.gauss_params["means"].detach().cpu().numpy(),
-                confidence=self.field.mlp_base.encoder.confidence.detach().cpu().numpy(),
-                gradients=self.field.mlp_base.encoder.xyz_gradient_accum.detach().cpu().numpy(),
-            )
+            if step % 16 == 0 and self.config.debug_mode:
+                self.viewer_occupancy_grid_handle.update(
+                    occ_grid=self.occupancy_grid.binaries.bool().squeeze(0).detach().cpu()
+                )
+                
+            if step % 10 == 0 and self.config.debug_mode:
+                self.viewer_gaussian_splats_handle.update(
+                    means=self.field.mlp_base.encoder.gauss_params["means"].detach().cpu().numpy(),
+                    covariances=torch.exp(self.field.mlp_base.encoder.gauss_params["log_covs"]).detach().cpu().numpy(),
+                    quats=self.field.mlp_base.encoder.gauss_params["quats"].detach().cpu().numpy(),
+                    confidence=self.field.mlp_base.encoder.confidence.detach().cpu().numpy(),
+                )
 
         return [
             TrainingCallback(

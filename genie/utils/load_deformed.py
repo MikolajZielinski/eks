@@ -33,13 +33,16 @@ def load_deformed_tetrahedrons(model: GENIEModel, ply_path: str, ref_ply_path: s
     # Load the deformed mesh
     mesh = o3d.io.read_triangle_mesh(ply_path)
     vertices = np.asarray(mesh.vertices)
+    print(f"Loaded {vertices.shape[0] // 4} tetrahedrons from {ply_path}")
     
     # Load the reference mesh
     ref_mesh = o3d.io.read_triangle_mesh(ref_ply_path)
     ref_vertices = np.asarray(ref_mesh.vertices)
+    print(f"Loaded {ref_vertices.shape[0] // 4} tetrahedrons from {ref_ply_path}")
     
     num_vertices = vertices.shape[0]
     num_gaussians = num_vertices // 4
+    print(f"Loading {num_gaussians} Gaussians.")
     
     assert ref_vertices.shape[0] == num_vertices, f"Reference and deformed meshes must have the same number of vertices. Reference {ref_vertices.shape[0]}, Deformed {num_vertices}"
 

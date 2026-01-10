@@ -3,7 +3,7 @@ data
 !genie/data/
 genie_demo_data/
 *.egg-info/
-outputs/
+outputs*
 renders/
 *.pyc
 __pycache__/
@@ -13,6 +13,7 @@ build/
 blender_neuraleditor/
 edits/
 eval/
+log*
 .env
 *.yml
 *.ipynb

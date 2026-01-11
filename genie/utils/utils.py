@@ -1,5 +1,10 @@
 import torch
 import math
+import numpy as np
+
+from torch import Tensor
+from typing import Union
+
 
 def quat_to_rotmat(quats):
     w, x, y, z = quats.unbind(-1)
@@ -49,29 +54,12 @@ def quat_multiply(q1: torch.Tensor, q2: torch.Tensor) -> torch.Tensor:
         dim=-1,
     )
 
-def rotate_gaussians_x90(points: torch.Tensor, quats: torch.Tensor | None = None):
-    """Rotate Gaussian means (and optional quats) by -90 deg about the x-axis."""
-    rot_xm90 = torch.tensor(
-        [
-            [1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0],
-            [0.0, -1.0, 0.0],
-        ],
-        dtype=points.dtype,
-        device=points.device,
-    )
-    rotated_points = points @ rot_xm90.T
 
-    rotated_quats = None
-    if quats is not None:
-        half_angle = math.sqrt(0.5)
-        # q for -90° about +x
-        q_rot = torch.tensor(
-            [half_angle, -half_angle, 0.0, 0.0],
-            dtype=quats.dtype,
-            device=quats.device,
-        )
-        rotated_quats = quat_multiply(q_rot, quats)
-        rotated_quats = rotated_quats / rotated_quats.norm(dim=-1, keepdim=True).clamp_min(1e-12)
-
-    return rotated_points, rotated_quats
+def to_tensor(data: Union[np.ndarray, Tensor], dtype: torch.dtype = torch.float32, device: str = 'cpu') -> Tensor:
+    """Convert numpy array to torch tensor."""
+    if isinstance(data, np.ndarray):
+        return torch.tensor(data, dtype=dtype, device=device)
+    elif isinstance(data, Tensor):
+        return data.to(device=device, dtype=dtype)
+    else:
+        raise TypeError(f"Unsupported data type: {type(data)}")

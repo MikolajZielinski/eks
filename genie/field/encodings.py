@@ -11,8 +11,8 @@ from nerfstudio.field_components.encodings import HashEncoding
 from nerfstudio.field_components.spatial_distortions import SpatialDistortion
 
 from genie.knnx.knn_algorithms import BaseKNN
-from genie.utils.utils import quat_to_rotmat
-
+from genie.utils.utils import quat_to_rotmat, to_tensor
+    
 
 class SplashEncoding(nn.Module):
     def __init__(
@@ -40,38 +40,30 @@ class SplashEncoding(nn.Module):
         self.spatial_distortion = spatial_distortion
 
         # Initialize means
-        means = gaussians["points3D_xyz"]
-        if means is not None and isinstance(means, np.ndarray):
-            means = torch.tensor(means, dtype=torch.float32, device=self.device)
-        elif means is not None and isinstance(means, Tensor):
-            means = means.to(device=self.device)
+        means = gaussians.get("points3D_xyz", None)
+        if means is not None:
+            means = to_tensor(means, dtype=torch.float32, device=self.device)
         else:
             means = self.init_mean(n_gausses)
         self.total_gaus = means.shape[0]
 
         # Initialize log covariances
         scales_tensor = gaussians.get("points3D_scale", None)
-        if scales_tensor is None:
-            log_covs_tensor = nn.Parameter(torch.log(torch.ones(self.total_gaus, 3, device=self.device) * 0.0001))
-        else:
-            if isinstance(scales_tensor, np.ndarray):
-                scales_tensor = torch.tensor(scales_tensor, dtype=torch.float32, device=self.device)
-            else:
-                scales_tensor = scales_tensor.to(device=self.device)
-
+        if scales_tensor is not None:
+            scales_tensor = to_tensor(scales_tensor, dtype=torch.float32, device=self.device)
             log_covs_tensor = torch.log(torch.square(scales_tensor))
+        else:
+            log_covs_tensor = torch.log(torch.ones(self.total_gaus, 3, device=self.device) * 0.0001)
 
         # Initialize quaternions
         quats_tensor = gaussians.get("points3D_quat", None)
-        if quats_tensor is None:
+        if quats_tensor is not None:
+            quats_tensor = to_tensor(quats_tensor, dtype=torch.float32, device=self.device)
+        else:
             quats_tensor = torch.zeros(self.total_gaus, 4, device=self.device)
             quats_tensor[:, 0] = 1.0
-        else:
-            if isinstance(quats_tensor, np.ndarray):
-                quats_tensor = torch.tensor(quats_tensor, dtype=torch.float32, device=self.device)
-            else:
-                quats_tensor = quats_tensor.to(device=self.device)
 
+        # Apply spatial distortion if provided
         if self.spatial_distortion is not None:
             contracted_means = self.spatial_distortion(means)
             self.contracted_means = (contracted_means + 2.0) / 4.0

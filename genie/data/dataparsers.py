@@ -1,19 +1,18 @@
-import math
 import torch
 import numpy as np
 
 from dataclasses import dataclass, field
-from typing import Type, Optional
+from typing import Type, Optional, Dict
 from pathlib import Path
 
 from nerfstudio.data.dataparsers.blender_dataparser import BlenderDataParserConfig, Blender
 from nerfstudio.data.dataparsers.nerfstudio_dataparser import NerfstudioDataParserConfig, Nerfstudio
 
-from genie.utils.utils import rotmat_to_quat, quat_multiply, rotate_gaussians_x90
+from genie.utils.utils import rotmat_to_quat, quat_multiply
 from genie.utils.ply_utils import read_ply
 
 
-def extract_gaussians_from_ply(ply_gaussians: dict, transform_matrix: torch.Tensor, scale_factor: float, opacity_threshold: Optional[float] = None) -> Gaussians:
+def extract_gaussians_from_ply(ply_gaussians: dict, transform_matrix: torch.Tensor, scale_factor: float, opacity_threshold: Optional[float] = None) -> Dict[str, torch.Tensor]:
     """Extracts 3D Gaussians from a PLY file data.
 
     Args:

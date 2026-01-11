@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import torch
-import faiss
-import numpy as np
-import os
 
 from dataclasses import dataclass, field
 from nerfstudio.configs.base_config import InstantiateConfig
@@ -73,19 +70,11 @@ class OptixKNN(BaseKNN):
 
         Parameters:
         - query: (N, D) torch tensor (on CUDA)
-        - points: (M, D) torch tensor (on CUDA)
 
         Returns:
         - nearest_indices: (N, n_neighbors) torch tensor
+        - nearest_distances: (N, n_neighbors) torch tensor
         """
-        # if query.shape[1] == 3:
-        #     pad = torch.full((query.shape[0], 1), 0.0, device=query.device, dtype=query.dtype)
-        #     self.pad_query = torch.cat([query, pad], dim=1)
-        # else:
-        #     self.pad_query = query
-
-        # distances = torch.empty((self.config.n_neighbours, self.pad_query.shape[0]), dtype=torch.float32, device='cuda')
-        # indices = torch.empty((self.config.n_neighbours, self.pad_query.shape[0]), dtype=torch.int32, device='cuda')
 
         indices, distances_squared = self.knn.kneighbors(query, self.config.n_neighbours)
         distances = torch.sqrt(distances_squared)

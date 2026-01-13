@@ -103,24 +103,24 @@ class ExportTriangleSoup():
 @dataclass
 class ExportTetrahedronSoup():
     """
-    Export a triangle soup from a gaussians.
+    Export a tetrahedron soup from a gaussians.
     """
     load_config: Path
     """Path to the configuration file."""
     output_filename: str = "tetrahedron_soup.ply"
     """Name of the output file."""
     scale: float = 0.1
-    """Scale factor for the triangles."""
+    """Scale factor for the tetrahedrons."""
     scale_mesh: float = 1.0
 
     def main(self) -> None:
-        """Export triangle soup"""
+        """Export tetrahedron soup"""
 
         assert self.load_config.exists(), f"Configuration file {self.load_config} does not exist."
         _, pipeline, _, _ = eval_setup(self.load_config)
 
         model = pipeline.model
-        assert isinstance(model, GenieModel), "Pipeline model must be GenieModel for triangle soup export."
+        assert isinstance(model, GenieModel), "Pipeline model must be GenieModel for tetrahedron soup export."
         
         with torch.no_grad():
             means = model.field.mlp_base.encoder.means
@@ -180,7 +180,7 @@ class ExportTetrahedronSoup():
             
             all_faces = np.concatenate([f1, f2, f3, f4], axis=0)
 
-            # Save triangle soup
+            # Save tetrahedrons soup
             mesh = o3d.geometry.TriangleMesh()
             mesh.vertices = o3d.utility.Vector3dVector(all_vertices)
             mesh.triangles = o3d.utility.Vector3iVector(all_faces)

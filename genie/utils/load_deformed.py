@@ -87,17 +87,16 @@ def load_deformed_tetrahedrons(model: GenieModel, ply_path: str, ref_ply_path: s
     encoder.log_covs.data = torch.log(torch.square(torch.clamp(S / scale, min=1e-6)))
     encoder.quats.data = new_quats
 
-    # Compute direction transform (Deformed -> Reference)
-    M_ref_pinv = torch.linalg.pinv(M_ref.double())
-    A = torch.matmul(M_def.double(), M_ref_pinv)
-    U_dt, _, Vh_dt = torch.linalg.svd(A)
-    R_dt = torch.matmul(U_dt, Vh_dt)
+    # Kabsch algorithm for rotation
+    H = M_def @ M_ref.transpose(1, 2)
+    U, _, Vt = torch.linalg.svd(H)
+    R = Vt.transpose(1, 2) @ U.transpose(1, 2)
 
-    # Enforce det = +1
-    det_dt = torch.linalg.det(R_dt)
-    mask_dt = det_dt < 0
-    if mask_dt.any():
-        U_dt[mask_dt, :, 2] *= -1
-    R_dt = torch.matmul(U_dt, Vh_dt)
+    # Ensure proper rotation
+    det = torch.linalg.det(R)  # (B,)
+    mask = det < 0
+    if mask.any():
+        Vt[mask,:,2] *= -1
+        R[mask] = Vt[mask].transpose(1, 2) @ U[mask].transpose(1, 2)
 
-    return R_dt.float()
+    return R

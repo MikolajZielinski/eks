@@ -154,7 +154,7 @@ class GenieField(Field):
 
         if direction_transform is not None:
             directions = ray_samples.frustums.directions
-            rotated_dirs = torch.einsum("...ij,...i->...j", direction_transform, directions)
+            rotated_dirs = torch.einsum("...ij,...j->...i", direction_transform, directions)
             directions = rotated_dirs
         else:
             directions = ray_samples.frustums.directions

@@ -68,7 +68,7 @@ class GenieModelConfig(ModelConfig):
     """Whether to disable scene contraction or not."""
     knn_algorithm: BaseKNNConfig = field(default_factory=lambda: BaseKNN())
     """KNN algorithm to use for nearest neighbor search."""
-    max_gb: int = 20
+    max_gb: int = 28
     """Maximum amount of GPU memory to use for densification."""
     densify: bool = True
     """Whether to densify points or not. If False, the model will not densify."""
@@ -156,15 +156,22 @@ class GenieModel(Model):
         self.ssim = structural_similarity_index_measure
         self.lpips = LearnedPerceptualImagePatchSimilarity(normalize=True)
 
-        # Point Cloud Viewer
+        # Gaussians Viewer
         if self.config.visualize_gaussians:
+            grads_accum = self.field.mlp_base.encoder.xyz_gradient_accum
+            denom = self.field.mlp_base.encoder.denom
+            denom_safe = torch.where(denom == 0, torch.ones_like(denom), denom)
+            avg_grads = (grads_accum / denom_safe).detach().cpu().numpy()
+
             self.viewer_gaussian_splats_handle = ViewerGaussianSplats(
                 name="gausses", 
                 aabb=self.scene_box, 
                 means=self.field.mlp_base.encoder.gauss_params["means"].detach().cpu().numpy(),
                 covariances=torch.exp(self.field.mlp_base.encoder.gauss_params["log_covs"]).detach().cpu().numpy(),
                 quats=self.field.mlp_base.encoder.gauss_params["quats"].detach().cpu().numpy(),
-                confidence=self.field.mlp_base.encoder.confidence.detach().cpu().numpy()
+                confidence=self.field.mlp_base.encoder.confidence.detach().cpu().numpy(),
+                gradients=avg_grads,
+                show_gradients=True
             )
         
         if self.config.visualize_occupancy_grid:
@@ -200,6 +207,9 @@ class GenieModel(Model):
             step=step,
             occ_eval_fn=self.occ_eval_fn,
             )
+        
+        def update_step(step: int):
+            self.field.mlp_base.encoder.step = step
 
         def update_viewer(step: int):
             if step % 16 == 0 and self.config.visualize_occupancy_grid:
@@ -208,11 +218,17 @@ class GenieModel(Model):
                 )
                 
             if step % 10 == 0 and self.config.visualize_gaussians:
+                grads_accum = self.field.mlp_base.encoder.xyz_gradient_accum
+                denom = self.field.mlp_base.encoder.denom
+                denom_safe = torch.where(denom == 0, torch.ones_like(denom), denom)
+                avg_grads = (grads_accum / denom_safe).detach().cpu().numpy()
+
                 self.viewer_gaussian_splats_handle.update(
                     means=self.field.mlp_base.encoder.gauss_params["means"].detach().cpu().numpy(),
                     covariances=torch.exp(self.field.mlp_base.encoder.gauss_params["log_covs"]).detach().cpu().numpy(),
                     quats=self.field.mlp_base.encoder.gauss_params["quats"].detach().cpu().numpy(),
                     confidence=self.field.mlp_base.encoder.confidence.detach().cpu().numpy(),
+                    gradients=avg_grads
                 )
 
         return [
@@ -220,6 +236,11 @@ class GenieModel(Model):
                 where_to_run=[TrainingCallbackLocation.BEFORE_TRAIN_ITERATION],
                 update_every_num_iters=1,
                 func=update_occupancy_grid,
+            ),
+            TrainingCallback(
+                where_to_run=[TrainingCallbackLocation.BEFORE_TRAIN_ITERATION],
+                update_every_num_iters=1,
+                func=update_step,
             ),
             TrainingCallback(
                 where_to_run=[TrainingCallbackLocation.AFTER_TRAIN_ITERATION],
@@ -255,6 +276,8 @@ class GenieModel(Model):
             print(f"[Densification] Skipped: CUDA memory usage {used_gb:.2f}GB > {self.config.max_gb}GB")
             return False
         
+        print(f"[Densification] Started: CUDA memory usage {used_gb:.2f}GB <= {self.config.max_gb}GB")
+        
         if self.config.densify:
             # Calculate scene extent for splitting threshold
             extent = self.scene_aabb[3:] - self.scene_aabb[:3]
@@ -280,8 +303,8 @@ class GenieModel(Model):
             )
 
         if direction_transform is not None:
-            positions = self.field.get_sampling_positions(ray_samples)
-            indices, _ = self.field.mlp_base.encoder.knn.get_nearest_neighbours(positions)
+            _, uncontracted_positions = self.field.get_sampling_positions(ray_samples)
+            indices, _ = self.field.mlp_base.encoder.knn.get_nearest_neighbours(uncontracted_positions)
             indices = indices[:, 0]
             closest_direction_transforms = direction_transform[indices]
 

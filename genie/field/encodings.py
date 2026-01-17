@@ -91,9 +91,7 @@ class SplashEncoding(nn.Module):
         # Gradient accumulation buffers
         self.xyz_gradient_accum = torch.zeros(self.total_gaus, device=self.device)
         self.denom = torch.zeros(self.total_gaus, device=self.device)
-
-        if self.unfreeze_gausses:
-            self.gauss_params["means"].register_hook(self._grad_hook)
+        self.step = 0
 
     def _grad_hook(self, grad):
         if grad.shape[0] == self.xyz_gradient_accum.shape[0]:
@@ -154,7 +152,7 @@ class SplashEncoding(nn.Module):
                 optimizer.param_groups[i]["params"] = [new_param]
                 optimizer.state[new_param] = param_state
 
-    def densify_and_split(self, optimizers: Dict[str, torch.optim.Optimizer], scene_extent: float, grad_threshold: float = 0.005):
+    def densify_and_split(self, optimizers: Dict[str, torch.optim.Optimizer], scene_extent: float, grad_threshold: float = 0.000005):
         """
         Densify gaussians based on accumulated gradients:
         - Clone: High gradient, small scale.
@@ -180,6 +178,7 @@ class SplashEncoding(nn.Module):
 
         # Identify candidates
         selected_pts_mask = torch.where(grads >= grad_threshold, True, False)
+        print(grads.mean().item(), grads.max().item(), selected_pts_mask.sum().item())
         # Exclude points with invalid scales
         selected_pts_mask = torch.logical_and(selected_pts_mask, torch.max(torch.exp(self.log_covs), dim=1).values > 0.0)
 
@@ -247,8 +246,6 @@ class SplashEncoding(nn.Module):
         def param_fn(name: str, p: Tensor) -> Tensor:
             if name == 'means':
                 new_param = nn.Parameter(torch.cat([p, new_means_append], dim=0), requires_grad=self.means.requires_grad)
-                if self.unfreeze_gausses:
-                    new_param.register_hook(self._grad_hook)
                 return new_param
             elif name == 'log_covs':
                 # For split mask, we need to modify existing values in p
@@ -280,11 +277,18 @@ class SplashEncoding(nn.Module):
         self.confidence = torch.cat([self.confidence, new_conf_append], dim=0)
         self.total_gaus = self.means.shape[0]
         
+        # Update contracted means
+        if self.spatial_distortion is not None:
+            contracted_means = self.spatial_distortion(self.means)
+            self.contracted_means = (contracted_means + 2.0) / 4.0
+        else:
+            self.contracted_means = self.means
+
         # Resize accumulators
         self.xyz_gradient_accum = torch.zeros(self.total_gaus, device=self.device)
         self.denom = torch.zeros(self.total_gaus, device=self.device)
         
-        self.feats = self.means_hash(self.means)
+        self.feats = self.means_hash(self.contracted_means)
         print(f"Densified to {self.total_gaus} gaussians (Cloned: {clone_mask.sum()}, Split: {split_mask.sum()})")
 
     def prune(self, optimizers: Dict[str, torch.optim.Optimizer], threshold: float=0.1):
@@ -297,8 +301,8 @@ class SplashEncoding(nn.Module):
             mask = self.confidence >= threshold
             def param_fn(name: str, p: Tensor) -> Tensor:
                 new_param = torch.nn.Parameter(p[mask], requires_grad=p.requires_grad)
-                if name == 'means' and self.unfreeze_gausses:
-                    new_param.register_hook(self._grad_hook)
+                # if name == 'means' and self.unfreeze_gausses:
+                #     new_param.register_hook(self._grad_hook)
                 return new_param
 
             def optimizer_fn(key: str, v: Tensor) -> Tensor:
@@ -308,7 +312,14 @@ class SplashEncoding(nn.Module):
 
             # Only keep entries where mask is True
             self.confidence = self.confidence[mask]
-            self.contracted_means = self.contracted_means[mask]
+            
+            # Update contracted means to point to new parameters or be correctly computed
+            if self.spatial_distortion is not None:
+                contracted_means = self.spatial_distortion(self.means)
+                self.contracted_means = (contracted_means + 2.0) / 4.0
+            else:
+                self.contracted_means = self.means
+
             self.total_gaus = self.means.shape[0]
             
             # Resize accumulators
@@ -361,6 +372,8 @@ class SplashEncoding(nn.Module):
 
         if self.training:
             self.feats = self.means_hash(self.contracted_means)
+            if self.densify_gausses and self.feats.requires_grad and self.step >= 800:
+                self.feats.register_hook(self._grad_hook)
         nearest_features = self.feats[nearest_gausses_indicies]
         nearest_covs = torch.exp(self.log_covs[nearest_gausses_indicies])
         nearest_quats = self.quats[nearest_gausses_indicies]
@@ -373,8 +386,7 @@ class SplashEncoding(nn.Module):
 
         # Normalization constant for diagonal Gaussian
         gau_weights = torch.exp(-0.5 * mdist)
-        zeros = torch.zeros_like(gau_weights)
-        gau_weights = torch.where(nearest_gausses_indicies != -1, gau_weights, zeros)
+        gau_weights = gau_weights * (nearest_gausses_indicies != -1)
         weighted_features = nearest_features * gau_weights.unsqueeze(-1)
 
         return torch.sum(weighted_features, dim=1)

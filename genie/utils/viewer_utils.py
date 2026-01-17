@@ -85,20 +85,23 @@ class ViewerGaussianSplats(ViewerElement[bool]):
 
     scene_handle: GaussianSplatHandle
 
-    def __init__(self, name: str, aabb: SceneBox, means: np.ndarray, covariances: np.ndarray, quats: np.ndarray, confidence: np.ndarray, visible: bool = True):
+    def __init__(self, name: str, aabb: SceneBox, means: np.ndarray, covariances: np.ndarray, quats: np.ndarray, confidence: np.ndarray, gradients: np.ndarray = None, show_gradients: bool = False, visible: bool = True):
         self.aabb = aabb
         self.means = means
         self.covariances = covariances
         self.quats = quats
         self.confidence = confidence
+        self.gradients = gradients
+        self.show_gradients = show_gradients
         super().__init__(name, visible=visible)
 
-    def update(self, means: np.ndarray, covariances: np.ndarray, quats: np.ndarray, confidence: np.ndarray) -> None:
+    def update(self, means: np.ndarray, covariances: np.ndarray, quats: np.ndarray, confidence: np.ndarray, gradients: np.ndarray = None) -> None:
         """Update the point cloud with new points."""
         self.means = means
         self.covariances = covariances
         self.quats = quats
         self.confidence = confidence
+        self.gradients = gradients
         if self.viser_server is not None:
             self._create_scene_handle(self.viser_server)
 
@@ -135,10 +138,23 @@ class ViewerGaussianSplats(ViewerElement[bool]):
         R_scaled = R * S_squared[:, None, :]
         covariances = R_scaled @ np.transpose(R, (0, 2, 1))
 
-        color_coeffs = np.random.uniform(0.4, 1.0, size=(means.shape[0]))
-        colors = np.tile((0, 1, 1), means.shape[0]).reshape(-1, 3) * color_coeffs[:, None]
-        colors[:, 1] *= (1 - self.confidence)
-        colors[:, 2] *= self.confidence
+        if self.show_gradients and self.gradients is not None:
+             # Normalize gradients for visualization
+             grads = self.gradients
+             max_grad = np.max(grads) if grads.size > 0 else 1.0
+             if max_grad == 0: max_grad = 1.0
+             norm_grads = grads / max_grad
+             
+             # Map gradients to Red (high gradient) -> Blue (low gradient)
+             colors = np.zeros((means.shape[0], 3))
+             colors[:, 0] = norm_grads * 255.0  # Red
+             colors[:, 2] = (1.0 - norm_grads) * 255.0 # Blue
+             
+        else:
+             color_coeffs = np.random.uniform(0.4, 1.0, size=(means.shape[0]))
+             colors = np.tile((0, 1, 1), means.shape[0]).reshape(-1, 3) * color_coeffs[:, None]
+             colors[:, 1] *= (1 - self.confidence)
+             colors[:, 2] *= self.confidence
 
         opacities = np.ones((means.shape[0], 1))
 

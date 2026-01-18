@@ -91,7 +91,9 @@ class SplashEncoding(nn.Module):
         # Gradient accumulation buffers
         self.xyz_gradient_accum = torch.zeros(self.total_gaus, device=self.device)
         self.denom = torch.zeros(self.total_gaus, device=self.device)
-        self.step = 0
+
+        if self.unfreeze_gausses:
+            self.gauss_params["means"].register_hook(self._grad_hook)
 
     def _grad_hook(self, grad):
         if grad.shape[0] == self.xyz_gradient_accum.shape[0]:
@@ -152,7 +154,7 @@ class SplashEncoding(nn.Module):
                 optimizer.param_groups[i]["params"] = [new_param]
                 optimizer.state[new_param] = param_state
 
-    def densify_and_split(self, optimizers: Dict[str, torch.optim.Optimizer], scene_extent: float, grad_threshold: float = 0.000005):
+    def densify_and_split(self, optimizers: Dict[str, torch.optim.Optimizer], scene_extent: float, grad_threshold: float = 0.005):
         """
         Densify gaussians based on accumulated gradients:
         - Clone: High gradient, small scale.
@@ -178,7 +180,6 @@ class SplashEncoding(nn.Module):
 
         # Identify candidates
         selected_pts_mask = torch.where(grads >= grad_threshold, True, False)
-        print(grads.mean().item(), grads.max().item(), selected_pts_mask.sum().item())
         # Exclude points with invalid scales
         selected_pts_mask = torch.logical_and(selected_pts_mask, torch.max(torch.exp(self.log_covs), dim=1).values > 0.0)
 
@@ -246,6 +247,8 @@ class SplashEncoding(nn.Module):
         def param_fn(name: str, p: Tensor) -> Tensor:
             if name == 'means':
                 new_param = nn.Parameter(torch.cat([p, new_means_append], dim=0), requires_grad=self.means.requires_grad)
+                if self.unfreeze_gausses:
+                    new_param.register_hook(self._grad_hook)
                 return new_param
             elif name == 'log_covs':
                 # For split mask, we need to modify existing values in p
@@ -301,8 +304,8 @@ class SplashEncoding(nn.Module):
             mask = self.confidence >= threshold
             def param_fn(name: str, p: Tensor) -> Tensor:
                 new_param = torch.nn.Parameter(p[mask], requires_grad=p.requires_grad)
-                # if name == 'means' and self.unfreeze_gausses:
-                #     new_param.register_hook(self._grad_hook)
+                if name == 'means' and self.unfreeze_gausses:
+                    new_param.register_hook(self._grad_hook)
                 return new_param
 
             def optimizer_fn(key: str, v: Tensor) -> Tensor:
@@ -372,8 +375,6 @@ class SplashEncoding(nn.Module):
 
         if self.training:
             self.feats = self.means_hash(self.contracted_means)
-            if self.densify_gausses and self.feats.requires_grad and self.step >= 800:
-                self.feats.register_hook(self._grad_hook)
         nearest_features = self.feats[nearest_gausses_indicies]
         nearest_covs = torch.exp(self.log_covs[nearest_gausses_indicies])
         nearest_quats = self.quats[nearest_gausses_indicies]

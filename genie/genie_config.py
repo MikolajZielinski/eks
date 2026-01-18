@@ -46,7 +46,7 @@ genie = MethodSpecification(
                 ),
                 eval_num_rays_per_chunk=8192,
                 grid_levels=1,
-                grid_resolution=256,
+                grid_resolution=128,
                 alpha_thre=0.0,
                 cone_angle=0.0,
                 disable_scene_contraction=True,

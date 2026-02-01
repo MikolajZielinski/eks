@@ -12,25 +12,25 @@ from nerfstudio.engine.optimizers import AdamOptimizerConfig
 from nerfstudio.plugins.types import MethodSpecification
 from nerfstudio.data.pixel_samplers import PixelSamplerConfig
 
-from genie.data.dataparsers import GenieBlenderDataParserConfig, GenieNerfstudioDataParserConfig
-from genie.genie_trainer import GenieTrainerConfig
-from genie.genie_model import GenieModelConfig
-from genie.knnx.knn_algorithms import OptixKNNConfig
-from genie.utils.schedulers import ChainedSchedulerConfig
-from genie.genie_pipeline import GeniePipelineConfig
+from eks.data.dataparsers import EksBlenderDataParserConfig, EksNerfstudioDataParserConfig
+from eks.eks_trainer import EksTrainerConfig
+from eks.eks_model import EksModelConfig
+from eks.knnx.knn_algorithms import OptixKNNConfig
+from eks.utils.schedulers import ChainedSchedulerConfig
+from eks.eks_pipeline import EksPipelineConfig
 
 MAX_NUM_ITERATIONS = 30000
 
-genie = MethodSpecification(
-    config=GenieTrainerConfig(
-        method_name="genie",
+eks = MethodSpecification(
+    config=EksTrainerConfig(
+        method_name="eks",
         steps_per_eval_batch=500,
         steps_per_save=100,
         max_num_iterations=MAX_NUM_ITERATIONS,
-        pipeline=GeniePipelineConfig(
+        pipeline=EksPipelineConfig(
             target_num_samples = 1 << 19,
             datamanager=VanillaDataManagerConfig(
-                dataparser=GenieBlenderDataParserConfig(
+                dataparser=EksBlenderDataParserConfig(
                     alpha_color="black",
                 ),
                 pixel_sampler=PixelSamplerConfig(
@@ -39,7 +39,7 @@ genie = MethodSpecification(
                 train_num_rays_per_batch=4096,
                 eval_num_rays_per_batch=4096,
             ),
-            model=GenieModelConfig(
+            model=EksModelConfig(
                 knn_algorithm=OptixKNNConfig(
                     chi_squared_radius=2.0,
                     n_neighbours=16,
@@ -83,16 +83,16 @@ genie = MethodSpecification(
     description="Gaussian Splatting Encoded Neural Radiance Fields",
 )
 
-genie_real = MethodSpecification(
-    config=GenieTrainerConfig(
-        method_name="genie-real",
+eks_real = MethodSpecification(
+    config=EksTrainerConfig(
+        method_name="eks-real",
         steps_per_eval_batch=500,
         steps_per_save=100,
         max_num_iterations=MAX_NUM_ITERATIONS,
-        pipeline=GeniePipelineConfig(
+        pipeline=EksPipelineConfig(
             target_num_samples = 1 << 17,
             datamanager=VanillaDataManagerConfig(
-                dataparser=GenieNerfstudioDataParserConfig(
+                dataparser=EksNerfstudioDataParserConfig(
                 ),
                 pixel_sampler=PixelSamplerConfig(
                     rejection_sample_mask=False,
@@ -100,7 +100,7 @@ genie_real = MethodSpecification(
                 train_num_rays_per_batch=4096,
                 eval_num_rays_per_batch=4096,
             ),
-            model=GenieModelConfig(
+            model=EksModelConfig(
                 knn_algorithm=OptixKNNConfig(
                     chi_squared_radius=120.0,
                     n_neighbours=16,

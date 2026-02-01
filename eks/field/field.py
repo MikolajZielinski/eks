@@ -23,11 +23,11 @@ from nerfstudio.field_components.spatial_distortions import SpatialDistortion
 from nerfstudio.fields.base_field import Field, get_normalized_directions
 from nerfstudio.field_components.encodings import SHEncoding
 
-from genie.field.mlp import MLP, MLPWithHashEncoding
-from genie.knnx.knn_algorithms import BaseKNN
+from eks.field.mlp import MLP, MLPWithHashEncoding
+from eks.knnx.knn_algorithms import BaseKNN
 
 
-class GenieField(Field):
+class EksField(Field):
     """Compound Field
 
     Args:

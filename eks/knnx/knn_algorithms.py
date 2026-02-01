@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from nerfstudio.configs.base_config import InstantiateConfig
 from typing import Type
 
-from genie.knnx.knnx_wrapper import OptiXKNN as CPyOptiXKNN
+from eks.knnx.knnx_wrapper import OptiXKNN as CPyOptiXKNN
 
 
 @dataclass

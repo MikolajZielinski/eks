@@ -10,8 +10,8 @@ from typing import Optional, Callable, Union, Dict, List
 from nerfstudio.field_components.encodings import HashEncoding
 from nerfstudio.field_components.spatial_distortions import SpatialDistortion
 
-from genie.knnx.knn_algorithms import BaseKNN
-from genie.utils.utils import quat_to_rotmat, to_tensor
+from eks.knnx.knn_algorithms import BaseKNN
+from eks.utils.utils import quat_to_rotmat, to_tensor
     
 
 class SplashEncoding(nn.Module):

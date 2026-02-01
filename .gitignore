@@ -1,7 +1,7 @@
 # General
 data
-!genie/data/
-genie_demo_data/
+!eks/data/
+eks_demo_data/
 *.egg-info/
 outputs*
 renders/

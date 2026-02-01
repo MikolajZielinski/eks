@@ -91,18 +91,18 @@ def extract_gaussians_from_ply(ply_gaussians: dict, transform_matrix: torch.Tens
 
 
 @dataclass
-class GenieBlenderDataParserConfig(BlenderDataParserConfig):
-    """Configuration for Genie Blender data parser."""
+class EksBlenderDataParserConfig(BlenderDataParserConfig):
+    """Configuration for Eks Blender data parser."""
 
-    _target: Type = field(default_factory=lambda: GenieBlender)
+    _target: Type = field(default_factory=lambda: EksBlender)
 
-class GenieBlender(Blender):
-    """Genie Blender data parser.
+class EksBlender(Blender):
+    """Eks Blender data parser.
 
-    This class extends the BlenderDataParser to handle Genie-specific data parsing.
+    This class extends the BlenderDataParser to handle Eks-specific data parsing.
     """
 
-    def __init__(self, config: GenieBlenderDataParserConfig):
+    def __init__(self, config: EksBlenderDataParserConfig):
 
         config.ply_path ="sparse_pc.ply"
         super().__init__(config)
@@ -133,10 +133,10 @@ class GenieBlender(Blender):
     
 
 @dataclass
-class GenieNerfstudioDataParserConfig(NerfstudioDataParserConfig):
-    """Configuration for Genie Nerfstudio data parser."""
+class EksNerfstudioDataParserConfig(NerfstudioDataParserConfig):
+    """Configuration for Eks Nerfstudio data parser."""
 
-    _target: Type = field(default_factory=lambda: GenieNerfstudio)
+    _target: Type = field(default_factory=lambda: EksNerfstudio)
     """target class to instantiate"""
     downscale_factor: Optional[int] = None
     """How much to downscale images. If not set, images are chosen such that the max dimension is <1600px."""
@@ -144,13 +144,13 @@ class GenieNerfstudioDataParserConfig(NerfstudioDataParserConfig):
     """Whether to load the 3D points from the colmap reconstruction."""
 
 
-class GenieNerfstudio(Nerfstudio):
-    """Genie Nerfstudio data parser.
+class EksNerfstudio(Nerfstudio):
+    """Eks Nerfstudio data parser.
 
-    This class extends the NerfstudioDataParser to handle Genie-specific data parsing.
+    This class extends the NerfstudioDataParser to handle Eks-specific data parsing.
     """
 
-    def __init__(self, config: GenieNerfstudioDataParserConfig):
+    def __init__(self, config: EksNerfstudioDataParserConfig):
 
         config.ply_path ="sparse_pc.ply"
         super().__init__(config)

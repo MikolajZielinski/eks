@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from nerfstudio.utils.eval_utils import eval_setup
 
-from genie.genie_model import GenieModel
+from eks.eks_model import EksModel
 
 
 @dataclass
@@ -28,7 +28,7 @@ class SineEdit:
             test_mode="test",
         )
 
-        assert isinstance(pipeline.model, GenieModel), "DatasetRender only works with GenieModel"
+        assert isinstance(pipeline.model, EksModel), "DatasetRender only works with EksModel"
         means = pipeline.model.field.mlp_base.encoder.means.detach().cpu().numpy()
         num_images = len(pipeline.datamanager.eval_dataset)
 

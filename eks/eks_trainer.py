@@ -16,10 +16,10 @@ from nerfstudio.utils.decorators import check_main_thread
 
 
 @dataclass
-class GenieTrainerConfig(TrainerConfig):
+class EksTrainerConfig(TrainerConfig):
     """Configuration for training regimen"""
 
-    _target: Type = field(default_factory=lambda: GenieTrainer)
+    _target: Type = field(default_factory=lambda: EksTrainer)
     """target class to instantiate"""
     densification_start_step: int = 1000
     """Step at which to start densifying points"""
@@ -39,12 +39,12 @@ class GenieTrainerConfig(TrainerConfig):
     """Step at which to freeze the means of the MLP encoder"""
 
 
-class GenieTrainer(Trainer):
-    """Trainer for Genie"""
+class EksTrainer(Trainer):
+    """Trainer for Eks"""
 
-    config: GenieTrainerConfig
+    config: EksTrainerConfig
 
-    def __init__(self, config: GenieTrainerConfig, local_rank: int = 0, world_size: int = 1) -> None:
+    def __init__(self, config: EksTrainerConfig, local_rank: int = 0, world_size: int = 1) -> None:
         super().__init__(config=config, local_rank=local_rank, world_size=world_size)
         self.total_time = 0.0
 

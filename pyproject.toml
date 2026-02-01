@@ -3,10 +3,10 @@ requires = ["setuptools", "wheel", "torch"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.package-data]
-"genie.knnx" = ["*.so", "*.ptx"]
+"eks.knnx" = ["*.so", "*.ptx"]
 
 [project]
-name = "nerfstudio-genie"
+name = "nerfstudio-eks"
 description = "Gaussian Splatting Encoded Neural Radiance Fields"
 version = "0.1.0"
 
@@ -16,14 +16,14 @@ dependencies = [
     ] 
 
 [tool.setuptools.packages.find]
-include = ["genie*"]
+include = ["eks*"]
 
 # register the entry point of your new method here:
 [project.entry-points.'nerfstudio.method_configs']
-genie = 'genie.genie_config:genie'
-genie-real = 'genie.genie_config:genie_real'
+eks = 'eks.eks_config:eks'
+eks-real = 'eks.eks_config:eks_real'
 
 [project.scripts]
 # Note, add entrypoint name to nerfstudio/scripts/completions/install.py to include CLI completion
-genie-export = 'genie.exporter:entrypoint'
-genie-render = 'genie.render:entrypoint'
+eks-export = 'eks.exporter:entrypoint'
+eks-render = 'eks.render:entrypoint'

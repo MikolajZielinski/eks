@@ -18,16 +18,16 @@ from nerfstudio.data.datamanagers.base_datamanager import VanillaDataManager
 from nerfstudio.utils import profiler
 
 @dataclass 
-class GeniePipelineConfig(DynamicBatchPipelineConfig):
-    """Configuration for the GeniePipeline."""
+class EksPipelineConfig(DynamicBatchPipelineConfig):
+    """Configuration for the EksPipeline."""
 
-    _target: Type = field(default_factory=lambda: GeniePipeline)
+    _target: Type = field(default_factory=lambda: EksPipeline)
     """target class to instantiate"""
 
 
-class GeniePipeline(DynamicBatchPipeline):
+class EksPipeline(DynamicBatchPipeline):
 
-    config: GeniePipelineConfig
+    config: EksPipelineConfig
     datamanager: VanillaDataManager
 
     def __init__(

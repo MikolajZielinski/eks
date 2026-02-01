@@ -1,5 +1,5 @@
 """
-Implementation of Genie.
+Implementation of Eks.
 """
 
 from __future__ import annotations
@@ -25,18 +25,18 @@ from nerfstudio.model_components.renderers import AccumulationRenderer, DepthRen
 from nerfstudio.models.base_model import Model, ModelConfig
 from nerfstudio.utils import colormaps
 
-from genie.field.field import GenieField
-from genie.knnx.knn_algorithms import BaseKNNConfig, BaseKNN
-from genie.utils.viewer_utils import ViewerGaussianSplats, ViewerOccupancyGrid, ViewerAABB
-from genie.utils.losses import distortion
+from eks.field.field import EksField
+from eks.knnx.knn_algorithms import BaseKNNConfig, BaseKNN
+from eks.utils.viewer_utils import ViewerGaussianSplats, ViewerOccupancyGrid, ViewerAABB
+from eks.utils.losses import distortion
 
 
 @dataclass
-class GenieModelConfig(ModelConfig):
-    """Genie Model Config"""
+class EksModelConfig(ModelConfig):
+    """Eks Model Config"""
 
     _target: Type = field(
-        default_factory=lambda: GenieModel
+        default_factory=lambda: EksModel
     )  # We can't write `NGPModel` directly, because `NGPModel` doesn't exist yet
     """target class to instantiate"""
     enable_collider: bool = False
@@ -82,17 +82,17 @@ class GenieModelConfig(ModelConfig):
     """Whether to visualize the occupancy grid in the viewer. This option slows down training."""
 
 
-class GenieModel(Model):
-    """Genie model
+class EksModel(Model):
+    """Eks model
 
     Args:
-        config: Genie configuration to instantiate model
+        config: Eks configuration to instantiate model
     """
 
-    config: GenieModelConfig
-    field: GenieField
+    config: EksModelConfig
+    field: EksField
 
-    def __init__(self, config: GenieModelConfig, **kwargs) -> None:
+    def __init__(self, config: EksModelConfig, **kwargs) -> None:
         super().__init__(config=config, **kwargs)
 
     def populate_modules(self):
@@ -109,7 +109,7 @@ class GenieModel(Model):
 
         # Initilize field
         self.knn_algorithm = self.config.knn_algorithm.setup()
-        self.field = GenieField(
+        self.field = EksField(
             knn_algorithm=self.knn_algorithm,
             aabb=self.scene_box.aabb,
             num_images=self.num_train_data,

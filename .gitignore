@@ -1,0 +1,30 @@
+# General
+data
+!eks/data/
+eks_demo_data/
+*.egg-info/
+outputs*
+renders/
+*.pyc
+__pycache__/
+exports/
+blender/
+build/
+blender_neuraleditor/
+edits/
+eval/
+log*
+.env
+*.yml
+*.ipynb
+
+# OptiX SDK
+NVIDIA-OptiX-SDK-*
+
+# CUDA
+*.so
+!knnx_core.so
+*.o
+
+# 3D Model Files
+*.ply

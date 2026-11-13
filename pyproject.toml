@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools", "wheel", "torch"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.package-data]
+"eks.knnx" = ["*.so", "*.ptx"]
+
+[project]
+name = "nerfstudio-eks"
+description = "Gaussian Splatting Encoded Neural Radiance Fields"
+version = "0.1.0"
+
+dependencies = [
+    "nerfstudio >= 0.3.0",
+    "pybind11"
+    ] 
+
+[tool.setuptools.packages.find]
+include = ["eks*"]
+
+# register the entry point of your new method here:
+[project.entry-points.'nerfstudio.method_configs']
+eks = 'eks.eks_config:eks'
+eks-real = 'eks.eks_config:eks_real'
+
+[project.scripts]
+# Note, add entrypoint name to nerfstudio/scripts/completions/install.py to include CLI completion
+eks-export = 'eks.exporter:entrypoint'
+eks-render = 'eks.render:entrypoint'
